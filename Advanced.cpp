@@ -44,6 +44,13 @@ bool isAlphaSpace(const string& s) {
     return !s.empty() && all_of(s.begin(), s.end(), [](char c){ return isalpha(c) || c == ' '; });
 }
 
+string trim(const string& s) {
+    size_t start = s.find_first_not_of(' ');
+    if (start == string::npos) return "";
+    size_t end = s.find_last_not_of(' ');
+    return s.substr(start, end - start + 1);
+}
+
 long long readNumber(const string& prompt, size_t minDigits = 1) {
     string input;
     while (true) {
@@ -59,8 +66,20 @@ string readName(const string& prompt, size_t minLen = 1) {
     while (true) {
         printCenteredInline(prompt);
         getline(cin, input);
-        if (isAlphaSpace(input)) return input;
+        string t = trim(input);
+        size_t letters = count_if(t.begin(), t.end(), ::isalpha);
+        if (letters >= minLen && isAlphaSpace(t)) return t;
         printCentered("Invalid input.");
+    }
+}
+
+int readPin(const string& prompt) {
+    string input;
+    while (true) {
+        printCenteredInline(prompt);
+        getline(cin, input);
+        if (isDigits(input) && input.size() == 4) return stoi(input);
+        printCentered("PIN must be exactly 4 digits.");
     }
 }
 
@@ -884,12 +903,12 @@ int main() {
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
         if (a == 1) {
-            int pin = (int)readNumber("Enter Admin PIN: ", 4);
+            int pin = readPin("Enter Admin PIN: ");
             if (pin == admin_pswd) admin_panel(bank);
             else printCentered("Wrong PIN.");
         }
         else if (a == 2) {
-            int pin = (int)readNumber("Enter Staff PIN: ", 4);
+            int pin = readPin("Enter Staff PIN: ");
             if (pin == staff_pswd) staff_panel(bank);
             else printCentered("Wrong PIN.");
         }
@@ -909,6 +928,7 @@ int main() {
 // ---------------- Admin ----------------
 void admin_panel(Bank& bank) {
     while (true) {
+        clearScreen();
         int b;
         cout<<endl;
         printCentered("********** ADMIN PANEL **********");
@@ -938,7 +958,7 @@ void admin_panel(Bank& bank) {
             t = toupper(t);
             if (t != 'C' && t != 'S') { printCentered("Invalid account type."); continue; }
             acc_type = (t == 'C') ? "Current" : "Savings";
-            pin = (int)readNumber("Enter PIN: ", 4);
+            pin = readPin("Enter PIN: ");
             do {
                 bal = readNumber("Enter Balance (Min:500): RM ");
                 if (bal < 500) printCentered("Minimum Balance is 500.");
@@ -986,7 +1006,7 @@ void admin_panel(Bank& bank) {
             newTypeCh = toupper(newTypeCh);
             if (newTypeCh != 'C' && newTypeCh != 'S') { printCentered("Invalid account type."); continue; }
             newType = (newTypeCh == 'C') ? "Current" : "Savings";
-            int newPIN = (int)readNumber("Enter New PIN: ", 4);
+            int newPIN = readPin("Enter New PIN: ");
 
             int r = bank.changeInfo(acc, newName, newic, newGender, newType, newPIN);
             if (r == 1) printCentered("Information changed."); else printCentered("Account not found.");
@@ -1025,7 +1045,7 @@ void staff_panel(Bank& bank) {
         }
         else if (c == 2) {
             int acc = (int)readNumber("Enter Account: ", 4);
-            int pin = (int)readNumber("Enter Account PIN: ", 4);
+            int pin = readPin("Enter Account PIN: ");
             long long amt = readNumber("Enter Amount to Deposit: RM ");
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
             // BEFORE
@@ -1044,7 +1064,7 @@ void staff_panel(Bank& bank) {
         }
         else if (c == 3) {
             int acc = (int)readNumber("Enter Account: ", 4);
-            int pin = (int)readNumber("Enter Account PIN: ", 4);
+            int pin = readPin("Enter Account PIN: ");
             long long amt = readNumber("Enter Amount to Withdraw: RM ");
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
             // BEFORE
@@ -1127,8 +1147,8 @@ void atm_service(Bank& bank, int acc, int& pin) {
             }
         }
          else if (op == 5) {
-            int oldp = (int)readNumber("Enter Old PIN: ", 4);
-            int newp = (int)readNumber("Enter New PIN: ", 4);
+            int oldp = readPin("Enter Old PIN: ");
+            int newp = readPin("Enter New PIN: ");
             int r = bank.changePin(acc, oldp, newp);
             if (r == 1) { printCentered("PIN changed."); pin = newp; }
             else if (r == 0) printCentered("Account not found.");
@@ -1247,7 +1267,7 @@ void atm_panel(Bank& bank) {
         if (d == 1 || d == 2) {
             int acc = (int)readNumber("Enter Account Number: ", 4);
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); cin.ignore(10000, '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
-            int pin = (int)readNumber("Enter PIN: ", 4);
+            int pin = readPin("Enter PIN: ");
             int chk = bank.checkAccPin(acc, pin);
             if (chk != 1) { printCentered("PIN incorrect."); cin.ignore(10000, '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
             if (d == 1) atm_service(bank, acc, pin);
