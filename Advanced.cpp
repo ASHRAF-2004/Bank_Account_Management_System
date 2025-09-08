@@ -1012,10 +1012,12 @@ void admin_panel(Bank& bank) {
             int r = bank.changeInfo(acc, newName, newic, newGender, newType, newPIN);
             if (r == 1) printCentered("Information changed."); else printCentered("Account not found.");
         }
-        else if (b == 6) {
+         else if (b == 6) {
             int acc = (int)readNumber("Enter Account Number: ", 4);
             int hasDel = bank.display1(acc);
             bank.display(acc); // will print either active or deleted logs
+            printCenteredInline("Press Enter to return to ADMIN PANEL...");
+            cin.get();
             if (!hasDel) {
                 // if not in deleted, we already printed active logs (or "[No logs]" or "Logs Not Found")
             }
