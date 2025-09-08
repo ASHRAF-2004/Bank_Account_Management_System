@@ -9,6 +9,7 @@
 #include <sstream>
 #include <cctype>
 #include <algorithm>
+#include <limits>
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -851,7 +852,12 @@ int main() {
 
         int a;
         printCenteredInline("Enter Your Choice: ");
-        if (!(cin >> a)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
+        if (!(cin >> a)) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            continue;
+        }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
         if (a == 1) {
             int pin = (int)readNumber("Enter Admin PIN: ", 4);
@@ -1233,6 +1239,4 @@ void atm_panel(Bank& bank) {
         }
     }
 }
-
-
 
