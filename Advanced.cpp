@@ -900,7 +900,7 @@ void admin_panel(Bank& bank) {
             string acc_type;
             int pin;
             long long bal;
-            printCenteredInline("Enter Passport No: "); getline(cin, ic);␊
+            printCenteredInline("Enter Passport No: "); getline(cin, ic);
             printCenteredInline("Enter Gender “Male/Female” (M/F): "); cin >> g; cin.ignore(10000, '\n');
             g = toupper(g);
             if (g != 'M' && g != 'F') { printCentered("Invalid gender."); continue; }
@@ -1233,5 +1233,6 @@ void atm_panel(Bank& bank) {
         }
     }
 }
+
 
 
