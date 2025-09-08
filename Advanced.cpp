@@ -10,6 +10,7 @@
 #include <cctype>
 #include <algorithm>
 #include <limits>
+#include <regex>
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -58,8 +59,31 @@ string readName(const string& prompt, size_t minLen = 1) {
     while (true) {
         printCenteredInline(prompt);
         getline(cin, input);
-        if (isAlphaSpace(input) && input.size() >= minLen) return input;
+        if (isAlphaSpace(input)) return input;
         printCentered("Invalid input.");
+    }
+}
+
+string readPassport(const string& prompt) {
+    static const regex pattern("^[A-Z0-9]{6,9}$");
+    string input;
+    while (true) {
+        printCenteredInline(prompt);
+        getline(cin, input);
+        string cleaned;
+        cleaned.reserve(input.size());
+        for (char c : input) {
+            if (!isspace(static_cast<unsigned char>(c))) {
+                cleaned.push_back(toupper(static_cast<unsigned char>(c)));
+            }
+        }
+        if (cleaned.empty()) {
+            printCentered("Please enter your passport number.");
+        } else if (!regex_match(cleaned, pattern)) {
+            printCentered("Passport number must be 6-9 letters/digits, no spaces or symbols.");
+        } else {
+            return cleaned;
+        }
     }
 }
 
@@ -906,7 +930,7 @@ void admin_panel(Bank& bank) {
             string acc_type;
             int pin;
             long long bal;
-            printCenteredInline("Enter Passport No: "); getline(cin, ic);
+            ic = readPassport("Enter Passport No: ");
             printCenteredInline("Enter Gender “Male/Female” (M/F): "); cin >> g; cin.ignore(10000, '\n');
             g = toupper(g);
             if (g != 'M' && g != 'F') { printCentered("Invalid gender."); continue; }
@@ -954,7 +978,7 @@ void admin_panel(Bank& bank) {
             string newic;
             char newGender, newTypeCh;
             string newType;
-            printCenteredInline("Enter New Passport No: "); getline(cin, newic);
+            newic = readPassport("Enter New Passport No: ");
             printCenteredInline("Enter Gender (M/F): "); cin >> newGender; cin.ignore(10000, '\n');
             newGender = toupper(newGender);
             if (newGender != 'M' && newGender != 'F') { printCentered("Invalid gender."); continue; }
