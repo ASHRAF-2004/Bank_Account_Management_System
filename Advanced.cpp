@@ -25,7 +25,7 @@ void printCenteredInline(const string& s);
 
 string formatAccNo(int acc) {
     stringstream ss;
-    ss << setw(6) << setfill('0') << acc;
+    ss << setw(4) << setfill('0') << acc;
     return ss.str();
 }
 
@@ -53,12 +53,12 @@ long long readNumber(const string& prompt, size_t minDigits = 1) {
     }
 }
 
-string readName(const string& prompt) {
+string readName(const string& prompt, size_t minLen = 1) {
     string input;
     while (true) {
         printCenteredInline(prompt);
         getline(cin, input);
-        if (isAlphaSpace(input)) return input;
+        if (isAlphaSpace(input) && input.size() >= minLen) return input;
         printCentered("Invalid input.");
     }
 }
@@ -900,7 +900,7 @@ void admin_panel(Bank& bank) {
         cin.ignore(10000, '\n'); // for getline after numbers
 
         if (b == 1) {
-            string full_name = readName("Enter Customer's Full Name: ");
+            string full_name = readName("Enter Customer's Full Name: ", 4);
             string ic;
             char g, t;
             string acc_type;
@@ -915,27 +915,27 @@ void admin_panel(Bank& bank) {
             if (t != 'C' && t != 'S') { printCentered("Invalid account type."); continue; }
             acc_type = (t == 'C') ? "Current" : "Savings";
             pin = (int)readNumber("Enter PIN: ", 4);
-            bal = readNumber("Enter Balance (Min:500): RM ");
+            do {
+                bal = readNumber("Enter Balance (Min:500): RM ");
+                if (bal < 500) printCentered("Minimum Balance is 500.");
+            } while (bal < 500);
 
             int accNoOut = 0;
-            if (bal < 500) {
-                printCentered("Minimum Balance is 500.");
-            }
-            else if (bank.addAccount(full_name, ic, g, acc_type, pin, bal, accNoOut)) {
+            if (bank.addAccount(full_name, ic, g, acc_type, pin, bal, accNoOut)) {
                 printCentered("Account created successfully.");
                 printCentered("Generated Account Number: " + formatAccNo(accNoOut));
             }
             else {
                 printCentered("Create failed (duplicate or memory).");
             }
-        }
-        else if (b == 2) {
-            int acc = (int)readNumber("Enter Account Number to Delete: ");
+        }        
+            else if (b == 2) {
+            int acc = (int)readNumber("Enter Account Number to Delete: ", 4);
             if (bank.deleteAccount(acc)) printCentered("Account deleted.");
             else printCentered("Account not found.");
         }
         else if (b == 3) {
-            int acc = (int)readNumber("Enter Account Number to Search: ");
+            int acc = (int)readNumber("Enter Account Number to Search: ", 4);
             if (!bank.printAccount(acc)) printCentered("Account not found.");
         }
         else if (b == 4) {
@@ -949,8 +949,8 @@ void admin_panel(Bank& bank) {
         }
 
          else if (b == 5) {
-            int acc = (int)readNumber("Enter Account Number: ");
-            string newName = readName("Enter New Name: ");
+            int acc = (int)readNumber("Enter Account Number: ", 4);
+            string newName = readName("Enter New Name: ", 4);
             string newic;
             char newGender, newTypeCh;
             string newType;
@@ -968,7 +968,7 @@ void admin_panel(Bank& bank) {
             if (r == 1) printCentered("Information changed."); else printCentered("Account not found.");
         }
         else if (b == 6) {
-            int acc = (int)readNumber("Enter Account Number: ");
+            int acc = (int)readNumber("Enter Account Number: ", 4);
             int hasDel = bank.display1(acc);
             bank.display(acc); // will print either active or deleted logs
             if (!hasDel) {
@@ -996,11 +996,11 @@ void staff_panel(Bank& bank) {
         if (!(cin >> c)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
 
          if (c == 1) {
-            int acc = (int)readNumber("Enter Account Number: ");
+            int acc = (int)readNumber("Enter Account Number: ", 4);
             if (!bank.printAccount(acc)) printCentered("User not found.");
         }
         else if (c == 2) {
-            int acc = (int)readNumber("Enter Account: ");
+            int acc = (int)readNumber("Enter Account: ", 4);
             int pin = (int)readNumber("Enter Account PIN: ", 4);
             long long amt = readNumber("Enter Amount to Deposit: RM ");
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
@@ -1019,7 +1019,7 @@ void staff_panel(Bank& bank) {
             else if (res == -2) printCentered("PIN incorrect.");
         }
         else if (c == 3) {
-            int acc = (int)readNumber("Enter Account: ");
+            int acc = (int)readNumber("Enter Account: ", 4);
             int pin = (int)readNumber("Enter Account PIN: ", 4);
             long long amt = readNumber("Enter Amount to Withdraw: RM ");
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
@@ -1038,7 +1038,7 @@ void staff_panel(Bank& bank) {
             else if (res == -3) printCentered("Invalid amount.");
         }
         else if (c == 4) {
-            int acc = (int)readNumber("Enter Account Number: ");
+            int acc = (int)readNumber("Enter Account Number: ", 4);
             int inDeleted = bank.display1(acc);
             bank.display(acc);
             if (!inDeleted) {
@@ -1091,7 +1091,7 @@ void atm_service(Bank& bank, int acc, int& pin) {
             else if (r == -2) printCentered("No transactions.");
         }
          else if (op == 4) {
-            int dst = (int)readNumber("Enter Recipient Account Number: ");
+            int dst = (int)readNumber("Enter Recipient Account Number: ", 4);
             if (!bank.hasAccount(dst)) { printCentered("Recipient account not found."); }
             else {
                 long long amt = readNumber("Enter Amount to Transfer: RM ");
@@ -1159,7 +1159,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
                     else if (r == -2) printCentered("PIN incorrect.");
                 }
                 else if (sub == 2) {
-                    int dst = (int)readNumber("Enter Recipient Account Number: ");
+                    int dst = (int)readNumber("Enter Recipient Account Number: ", 4);
                     if (!bank.hasAccount(dst)) { printCentered("Recipient account not found."); }
                     else {
                         long long amt = readNumber("Enter Amount to Deposit: RM ");
@@ -1221,7 +1221,7 @@ void atm_panel(Bank& bank) {
         if (!(cin >> d)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
 
         if (d == 1 || d == 2) {
-            int acc = (int)readNumber("Enter Account Number: ");
+            int acc = (int)readNumber("Enter Account Number: ", 4);
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); cin.ignore(10000, '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
             int pin = (int)readNumber("Enter PIN: ", 4);
             int chk = bank.checkAccPin(acc, pin);
