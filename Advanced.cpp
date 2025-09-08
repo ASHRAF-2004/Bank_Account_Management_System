@@ -8,6 +8,7 @@
 #include <vector>
 #include <sstream>
 #include <cctype>
+#include <algorithm>
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -18,10 +19,47 @@ using namespace std;
 const string DATA_FILE = "accounts.dat";
 const string LOG_FILE  = "logs.dat";
 
+void printCentered(const std::string& s);
+void printCenteredInline(const string& s);
+
 string formatAccNo(int acc) {
     stringstream ss;
     ss << setw(6) << setfill('0') << acc;
     return ss.str();
+}
+
+string formatPin(int pin) {
+    stringstream ss;
+    ss << setw(4) << setfill('0') << pin;
+    return ss.str();
+}
+
+bool isDigits(const string& s) {
+    return !s.empty() && all_of(s.begin(), s.end(), ::isdigit);
+}
+
+bool isAlphaSpace(const string& s) {
+    return !s.empty() && all_of(s.begin(), s.end(), [](char c){ return isalpha(c) || c == ' '; });
+}
+
+long long readNumber(const string& prompt, size_t minDigits = 1) {
+    string input;
+    while (true) {
+        printCenteredInline(prompt);
+        getline(cin, input);
+        if (isDigits(input) && input.size() >= minDigits) return stoll(input);
+        printCentered("Invalid input.");
+    }
+}
+
+string readName(const string& prompt) {
+    string input;
+    while (true) {
+        printCenteredInline(prompt);
+        getline(cin, input);
+        if (isAlphaSpace(input)) return input;
+        printCentered("Invalid input.");
+    }
 }
 
 struct AccountRecord {
@@ -33,7 +71,7 @@ struct AccountRecord {
     int pin;
     long long balance;
 };
-// ======================= SQLite3 Integration =======================
+
 
 // ---------- Console helpers ----------
 int getConsoleWidth() {
@@ -206,7 +244,7 @@ public:
             "; Passport No: " + ic +
             "; Gender: " + gStr +
             "; Type: " + typeCS +
-            "; PIN: " + to_string(pin) +
+            "; PIN: " + formatPin(pin) +
             "; Balance: RM " + to_string(balance));
     }
 };
@@ -609,7 +647,7 @@ public:
             // convert values to strings so we can center everything
             string sAcc = formatAccNo(a->accNo);
             string sGen = (a->gender == 'M') ? "Male" : "Female";
-            string sPin = to_string(a->pin);
+            string sPin = formatPin(a->pin);
             string sBal = string("RM ") + to_string(a->balance);
 
             // build ONE line, then center the whole line
@@ -816,16 +854,12 @@ int main() {
         if (!(cin >> a)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
 
         if (a == 1) {
-            int pin;
-            printCenteredInline("Enter Admin PIN: ");
-            cin >> pin;
+            int pin = (int)readNumber("Enter Admin PIN: ", 4);
             if (pin == admin_pswd) admin_panel(bank);
             else printCentered("Wrong PIN.");
         }
         else if (a == 2) {
-            int pin;
-            printCenteredInline("Enter Staff PIN: ");
-            cin >> pin;
+            int pin = (int)readNumber("Enter Staff PIN: ", 4);
             if (pin == staff_pswd) staff_panel(bank);
             else printCentered("Wrong PIN.");
         }
@@ -860,13 +894,13 @@ void admin_panel(Bank& bank) {
         cin.ignore(10000, '\n'); // for getline after numbers
 
         if (b == 1) {
-            string full_name, ic;
+            string full_name = readName("Enter Customer's Full Name: ");
+            string ic;
             char g, t;
             string acc_type;
             int pin;
             long long bal;
-            printCenteredInline("Enter Customer's Full Name: "); getline(cin, full_name);
-            printCenteredInline("Enter Passport No: "); getline(cin, ic);
+            printCenteredInline("Enter Passport No: "); getline(cin, ic);␊
             printCenteredInline("Enter Gender “Male/Female” (M/F): "); cin >> g; cin.ignore(10000, '\n');
             g = toupper(g);
             if (g != 'M' && g != 'F') { printCentered("Invalid gender."); continue; }
@@ -874,8 +908,8 @@ void admin_panel(Bank& bank) {
             t = toupper(t);
             if (t != 'C' && t != 'S') { printCentered("Invalid account type."); continue; }
             acc_type = (t == 'C') ? "Current" : "Savings";
-            printCenteredInline("Enter PIN: "); cin >> pin;
-            printCenteredInline("Enter Balance (Min:500): RM "); cin >> bal;
+            pin = (int)readNumber("Enter PIN: ", 4);
+            bal = readNumber("Enter Balance (Min:500): RM ");
 
             int accNoOut = 0;
             if (bal < 500) {
@@ -890,16 +924,12 @@ void admin_panel(Bank& bank) {
             }
         }
         else if (b == 2) {
-            int acc;
-            printCenteredInline("Enter Account Number to Delete: ");
-            cin >> acc;
+            int acc = (int)readNumber("Enter Account Number to Delete: ");
             if (bank.deleteAccount(acc)) printCentered("Account deleted.");
             else printCentered("Account not found.");
         }
         else if (b == 3) {
-            int acc;
-            printCenteredInline("Enter Account Number to Search: ");
-            cin >> acc;
+            int acc = (int)readNumber("Enter Account Number to Search: ");
             if (!bank.printAccount(acc)) printCentered("Account not found.");
         }
         else if (b == 4) {
@@ -912,13 +942,12 @@ void admin_panel(Bank& bank) {
             cin.get();
         }
 
-        else if (b == 5) {
-            int acc, newPIN;
-            string newName, newic;
+         else if (b == 5) {
+            int acc = (int)readNumber("Enter Account Number: ");
+            string newName = readName("Enter New Name: ");
+            string newic;
             char newGender, newTypeCh;
             string newType;
-            printCenteredInline("Enter Account Number: "); cin >> acc; cin.ignore(10000, '\n');
-            printCenteredInline("Enter New Name: "); getline(cin, newName);
             printCenteredInline("Enter New Passport No: "); getline(cin, newic);
             printCenteredInline("Enter Gender (M/F): "); cin >> newGender; cin.ignore(10000, '\n');
             newGender = toupper(newGender);
@@ -927,15 +956,13 @@ void admin_panel(Bank& bank) {
             newTypeCh = toupper(newTypeCh);
             if (newTypeCh != 'C' && newTypeCh != 'S') { printCentered("Invalid account type."); continue; }
             newType = (newTypeCh == 'C') ? "Current" : "Savings";
-            printCenteredInline("Enter New PIN: "); cin >> newPIN;
+            int newPIN = (int)readNumber("Enter New PIN: ", 4);
 
             int r = bank.changeInfo(acc, newName, newic, newGender, newType, newPIN);
             if (r == 1) printCentered("Information changed."); else printCentered("Account not found.");
         }
         else if (b == 6) {
-            int acc;
-            printCenteredInline("Enter Account Number: ");
-            cin >> acc;
+            int acc = (int)readNumber("Enter Account Number: ");
             int hasDel = bank.display1(acc);
             bank.display(acc); // will print either active or deleted logs
             if (!hasDel) {
@@ -962,16 +989,15 @@ void staff_panel(Bank& bank) {
         printCenteredInline("Enter an Option: ");
         if (!(cin >> c)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
 
-        if (c == 1) {
-            int acc; printCenteredInline("Enter Account Number: "); cin >> acc;
+         if (c == 1) {
+            int acc = (int)readNumber("Enter Account Number: ");
             if (!bank.printAccount(acc)) printCentered("User not found.");
         }
         else if (c == 2) {
-            int acc, pin; long long amt;
-            printCenteredInline("Enter Account: "); cin >> acc;
+            int acc = (int)readNumber("Enter Account: ");
+            int pin = (int)readNumber("Enter Account PIN: ", 4);
+            long long amt = readNumber("Enter Amount to Deposit: RM ");
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
-            printCenteredInline("Enter Account PIN: "); cin >> pin;
-            printCenteredInline("Enter Amount to Deposit: RM "); cin >> amt;
             // BEFORE
             cout<<endl;
             printCentered("Status BEFORE Deposit:");
@@ -987,11 +1013,10 @@ void staff_panel(Bank& bank) {
             else if (res == -2) printCentered("PIN incorrect.");
         }
         else if (c == 3) {
-            int acc, pin; long long amt;
-            printCenteredInline("Enter Account: "); cin >> acc;
+            int acc = (int)readNumber("Enter Account: ");
+            int pin = (int)readNumber("Enter Account PIN: ", 4);
+            long long amt = readNumber("Enter Amount to Withdraw: RM ");
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
-            printCenteredInline("Enter Account PIN: "); cin >> pin;
-            printCenteredInline("Enter Amount to Withdraw: RM "); cin >> amt;
             // BEFORE
             printCentered("Status BEFORE Withdraw:");
             bank.printAccount(acc);
@@ -1007,7 +1032,7 @@ void staff_panel(Bank& bank) {
             else if (res == -3) printCentered("Invalid amount.");
         }
         else if (c == 4) {
-            int acc; printCenteredInline("Enter Account Number: "); cin >> acc;
+            int acc = (int)readNumber("Enter Account Number: ");
             int inDeleted = bank.display1(acc);
             bank.display(acc);
             if (!inDeleted) {
@@ -1039,7 +1064,7 @@ void atm_service(Bank& bank, int acc, int& pin) {
         if (!(cin >> op)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
 
         if (op == 1) {
-            long long amt; printCenteredInline("Enter Amount to Withdraw: RM "); cin >> amt;
+            long long amt = readNumber("Enter Amount to Withdraw: RM ");
             int res = bank.withdraw(acc, pin, amt);
             if (res == 1) printCentered("Withdraw successful.");
             else if (res == 0) printCentered("Account not found.");
@@ -1059,11 +1084,11 @@ void atm_service(Bank& bank, int acc, int& pin) {
             else if (r == -1) printCentered("PIN incorrect.");
             else if (r == -2) printCentered("No transactions.");
         }
-        else if (op == 4) {
-            int dst; long long amt; printCenteredInline("Enter Recipient Account Number: "); cin >> dst;
+         else if (op == 4) {
+            int dst = (int)readNumber("Enter Recipient Account Number: ");
             if (!bank.hasAccount(dst)) { printCentered("Recipient account not found."); }
             else {
-                printCenteredInline("Enter Amount to Transfer: RM "); cin >> amt;
+                long long amt = readNumber("Enter Amount to Transfer: RM ");
                 int r = bank.transfer(acc, pin, dst, amt);
                 if (r == 1) printCentered("Transfer successful.");
                 else if (r == -1) printCentered("Insufficient funds.");
@@ -1071,8 +1096,9 @@ void atm_service(Bank& bank, int acc, int& pin) {
                 else if (r == -3) printCentered("Invalid amount.");
             }
         }
-        else if (op == 5) {
-            int oldp, newp; printCenteredInline("Enter Old PIN: "); cin >> oldp; printCenteredInline("Enter New PIN: "); cin >> newp;
+         else if (op == 5) {
+            int oldp = (int)readNumber("Enter Old PIN: ", 4);
+            int newp = (int)readNumber("Enter New PIN: ", 4);
             int r = bank.changePin(acc, oldp, newp);
             if (r == 1) { printCentered("PIN changed."); pin = newp; }
             else if (r == 0) printCentered("Account not found.");
@@ -1119,7 +1145,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
                 if (!(cin >> sub)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
 
                 if (sub == 1) {
-                    long long amt; printCenteredInline("Enter Amount to Deposit: RM "); cin >> amt;
+                    long long amt = readNumber("Enter Amount to Deposit: RM ");
                     int r = bank.deposit(acc, pin, amt);
                     if (r == 1) printCentered("Deposit successful.");
                     else if (r == 0) printCentered("Account not found.");
@@ -1127,10 +1153,10 @@ void cdm_service(Bank& bank, int acc, int pin) {
                     else if (r == -2) printCentered("PIN incorrect.");
                 }
                 else if (sub == 2) {
-                    int dst; long long amt; printCenteredInline("Enter Recipient Account Number: "); cin >> dst;
+                    int dst = (int)readNumber("Enter Recipient Account Number: ");
                     if (!bank.hasAccount(dst)) { printCentered("Recipient account not found."); }
                     else {
-                        printCenteredInline("Enter Amount to Deposit: RM "); cin >> amt;
+                        long long amt = readNumber("Enter Amount to Deposit: RM ");
                         int r = bank.transfer(acc, pin, dst, amt);
                         if (r == 1) printCentered("Deposit successful.");
                         else if (r == -1) printCentered("Insufficient funds.");
@@ -1189,9 +1215,9 @@ void atm_panel(Bank& bank) {
         if (!(cin >> d)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
 
         if (d == 1 || d == 2) {
-            int acc; printCenteredInline("Enter Account Number: "); cin >> acc;
+            int acc = (int)readNumber("Enter Account Number: ");
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); cin.ignore(10000, '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
-            int pin; printCenteredInline("Enter PIN: "); cin >> pin;
+            int pin = (int)readNumber("Enter PIN: ", 4);
             int chk = bank.checkAccPin(acc, pin);
             if (chk != 1) { printCentered("PIN incorrect."); cin.ignore(10000, '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
             if (d == 1) atm_service(bank, acc, pin);
@@ -1207,4 +1233,5 @@ void atm_panel(Bank& bank) {
         }
     }
 }
+
 
