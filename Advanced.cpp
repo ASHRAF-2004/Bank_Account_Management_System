@@ -966,22 +966,28 @@ void admin_panel(Bank& bank) {
             } while (bal < 500);
 
             int accNoOut = 0;
-            if (bank.addAccount(full_name, ic, g, acc_type, pin, bal, accNoOut)) {
+             if (bank.addAccount(full_name, ic, g, acc_type, pin, bal, accNoOut)) {
                 printCentered("Account created successfully.");
                 printCentered("Generated Account Number: " + formatAccNo(accNoOut));
             }
             else {
                 printCentered("Create failed (duplicate or memory).");
             }
-        }        
+            printCenteredInline("Press Enter to return to ADMIN PANEL...");
+            cin.get();
+        }
             else if (b == 2) {
             int acc = (int)readNumber("Enter Account Number to Delete: ", 4);
             if (bank.deleteAccount(acc)) printCentered("Account deleted.");
             else printCentered("Account not found.");
+            printCenteredInline("Press Enter to return to ADMIN PANEL...");
+            cin.get();
         }
         else if (b == 3) {
             int acc = (int)readNumber("Enter Account Number to Search: ", 4);
             if (!bank.printAccount(acc)) printCentered("Account not found.");
+            printCenteredInline("Press Enter to return to ADMIN PANEL...");
+            cin.get();
         }
         else if (b == 4) {
             // Show list of all accounts in a neat table
@@ -1011,8 +1017,10 @@ void admin_panel(Bank& bank) {
 
             int r = bank.changeInfo(acc, newName, newic, newGender, newType, newPIN);
             if (r == 1) printCentered("Information changed."); else printCentered("Account not found.");
+            printCenteredInline("Press Enter to return to ADMIN PANEL...");
+            cin.get();
         }
-         else if (b == 6) {
+        else if (b == 6) {
             int acc = (int)readNumber("Enter Account Number: ", 4);
             int hasDel = bank.display1(acc);
             bank.display(acc); // will print either active or deleted logs
@@ -1041,10 +1049,13 @@ void staff_panel(Bank& bank) {
         printCentered("5. Back to Main Menu");
         printCenteredInline("Enter an Option: ");
         if (!(cin >> c)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
+        cin.ignore(10000, '\n'); // for getline after numbers
 
          if (c == 1) {
             int acc = (int)readNumber("Enter Account Number: ", 4);
             if (!bank.printAccount(acc)) printCentered("User not found.");
+            printCenteredInline("Press Enter to return to STAFF PANEL...");
+            cin.get();
         }
         else if (c == 2) {
             int acc = (int)readNumber("Enter Account: ", 4);
@@ -1064,6 +1075,8 @@ void staff_panel(Bank& bank) {
             else if (res == 0) printCentered("Account not found.");
             else if (res == -1) printCentered("Invalid amount.");
             else if (res == -2) printCentered("PIN incorrect.");
+            printCenteredInline("Press Enter to return to STAFF PANEL...");
+            cin.get();
         }
         else if (c == 3) {
             int acc = (int)readNumber("Enter Account: ", 4);
@@ -1083,6 +1096,8 @@ void staff_panel(Bank& bank) {
             else if (res == -1) printCentered("Insufficient funds.");
             else if (res == -2) printCentered("PIN incorrect.");
             else if (res == -3) printCentered("Invalid amount.");
+            printCenteredInline("Press Enter to return to STAFF PANEL...");
+            cin.get();
         }
         else if (c == 4) {
             int acc = (int)readNumber("Enter Account Number: ", 4);
@@ -1091,6 +1106,8 @@ void staff_panel(Bank& bank) {
             if (!inDeleted) {
                 // active logs printed already (or message)
             }
+            printCenteredInline("Press Enter to return to STAFF PANEL...");
+            cin.get();
         }
         else if (c == 5) {
             break;
