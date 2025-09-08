@@ -13,6 +13,7 @@
 #include <regex>
 #ifdef _WIN32
 #include <windows.h>
+#undef max
 #include <io.h>
 #include <fcntl.h>
 #endif
