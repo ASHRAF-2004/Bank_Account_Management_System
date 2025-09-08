@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <limits>
 #include <regex>
+#include <cstdint>
 #ifdef _WIN32
 #include <windows.h>
 #undef max
@@ -21,6 +22,8 @@ using namespace std;
 
 const string DATA_FILE = "accounts.dat";
 const string LOG_FILE  = "logs.dat";
+const long long MIN_BAL = 500;
+const long long DENOM   = 10;
 
 void printCentered(const std::string& s);
 void printCenteredInline(const string& s);
@@ -37,12 +40,28 @@ string formatPin(int pin) {
     return ss.str();
 }
 
+static string maskMid(const string& s) {
+    if (s.size() <= 4) return string(s.size(), '*');
+    string t = s;
+    for (size_t i = 2; i + 2 < t.size(); ++i) t[i] = '*';
+    return t;
+}
+
+static string maskPin(int /*pin*/) {
+    return "****";
+}
+
 bool isDigits(const string& s) {
     return !s.empty() && all_of(s.begin(), s.end(), ::isdigit);
 }
 
 bool isAlphaSpace(const string& s) {
-    return !s.empty() && all_of(s.begin(), s.end(), [](char c){ return isalpha(c) || c == ' '; });
+    if (s.empty()) return false;
+    for (char c : s) {
+        if (!(isalpha((unsigned char)c) || c == ' ' || c == '-' || c == '\''))
+            return false;
+    }
+    return true;
 }
 
 string trim(const string& s) {
@@ -52,13 +71,22 @@ string trim(const string& s) {
     return s.substr(start, end - start + 1);
 }
 
-long long readNumber(const string& prompt, size_t minDigits = 1) {
-    string input;
+long long readNumberSafe(const string& prompt, size_t minDigits = 1,
+                         long long minV = 0,
+                         long long maxV = 1'000'000'000'000LL) {
+    string s;
     while (true) {
         printCenteredInline(prompt);
-        getline(cin, input);
-        if (isDigits(input) && input.size() >= minDigits) return stoll(input);
-        printCentered("Invalid input.");
+        if (!getline(cin, s)) { cin.clear(); continue; }
+        s.erase(remove_if(s.begin(), s.end(), ::isspace), s.end());
+        if (s.size() < minDigits || s.empty() || !all_of(s.begin(), s.end(), ::isdigit)) {
+            printCentered("Invalid input."); continue;
+        }
+        if (s.size() > 18) { printCentered("Number too large."); continue; }
+        long long v;
+        try { v = stoll(s); } catch (...) { printCentered("Invalid number."); continue; }
+        if (v < minV || v > maxV) { printCentered("Out of allowed range."); continue; }
+        return v;
     }
 }
 
@@ -69,7 +97,7 @@ string readName(const string& prompt, size_t minLen = 1) {
         getline(cin, input);
         string t = trim(input);
         size_t letters = count_if(t.begin(), t.end(), ::isalpha);
-        if (letters >= minLen && isAlphaSpace(t)) return t;
+        if (letters >= minLen && isAlphaSpace(t) && t.size() <= 99) return t;
         printCentered("Invalid input.");
     }
 }
@@ -115,6 +143,12 @@ struct AccountRecord {
     char typeCS[10];
     int pin;
     long long balance;
+};
+
+struct FileHeader {
+    uint32_t magic = 0x42414E4B; // 'BANK'
+    uint16_t ver = 1;
+    uint16_t r = 0;
 };
 
 
@@ -286,13 +320,29 @@ public:
         string gStr = (gender == 'M') ? "Male" : "Female";
         printCentered("Account No: " + formatAccNo(accNo) +
             "; Name: " + name +
-            "; Passport No: " + ic +
+            "; Passport No: " + maskMid(ic) +
             "; Gender: " + gStr +
             "; Type: " + typeCS +
-            "; PIN: " + formatPin(pin) +
+            "; PIN: " + maskPin(pin) +
             "; Balance: RM " + to_string(balance));
     }
 };
+
+void addLogCapped(Account* a, const string& msg, int maxN = 500) {
+    a->addLog(msg);
+    int cnt = 0;
+    for (LogNode* p = a->logHead; p; p = p->next) ++cnt;
+    while (cnt > maxN && a->logHead) {
+        LogNode* prev = nullptr;
+        LogNode* cur = a->logHead;
+        while (cur->next) { prev = cur; cur = cur->next; }
+        if (prev) {
+            prev->next = nullptr;
+            delete cur;
+            --cnt;
+        } else break;
+    }
+}
 
 // ======================= List Node for accounts =======================
 struct Node {
@@ -415,6 +465,15 @@ public:
         return findNode(accNo) != NULL;
     }
 
+    bool passportExists(const string& ic, int excludeAcc = -1) const {
+        Node* c = head;
+        while (c) {
+            if (c->data->ic == ic && c->data->accNo != excludeAcc) return true;
+            c = c->next;
+        }
+        return false;
+    }
+
 
     // 1) Create account (prevent duplicates)
     // Function to add a new account, avoiding duplicates
@@ -438,12 +497,12 @@ public:
         addToList(acc);
 
         // log creation and persist
-        acc->addLog(timestamp("Account created"));
+        addLogCapped(acc, timestamp("Account created"));
 
         outAccNo = accNo;  // Output the generated account number
         printCentered( "Account added successfully!" );
         
-        saveToFile(DATA_FILE);
+        if (!saveToFile(DATA_FILE)) return false;
         return true;
     }
 
@@ -454,9 +513,10 @@ public:
         addToList(acc);
     }
 
-    void saveToFile(const string& filename) const {
+    bool saveToFile(const string& filename) const {
         ofstream out(filename, ios::binary | ios::trunc);
-        if (!out) return;
+        if (!out) { printCentered("Storage error (accounts)."); return false; }
+        FileHeader h; out.write(reinterpret_cast<char*>(&h), sizeof(h));
         Node* cur = head;
         while (cur) {
             AccountRecord rec{};
@@ -470,11 +530,14 @@ public:
             rec.typeCS[sizeof(rec.typeCS) - 1] = '\0';
             rec.pin = cur->data->pin;
             rec.balance = cur->data->balance;
-            out.write(reinterpret_cast<char*>(&rec), sizeof(rec));
+            if (!out.write(reinterpret_cast<char*>(&rec), sizeof(rec))) {
+                printCentered("Write failed (accounts).");
+                return false;
+            }
             cur = cur->next;
         }
-        // also persist logs for active and deleted accounts
-        saveLogsToFile(LOG_FILE);
+        if (!saveLogsToFile(LOG_FILE)) return false;
+        return true;
     }
 
 
@@ -508,70 +571,123 @@ public:
         return 1;
     }
 
-    // 4) Deposit
-    // returns: 1 ok, 0 not found, -1 bad amount
+     // 4) Deposit
+    // returns: 1 ok, 0 not found, -1 bad amount, -2 bad pin, -4 storage error
     int deposit(int accNo, int pin, long long amount) {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != pin) return -2; // PIN wrong (extra check)
-        if (amount <= 0) return -1;
+        if (n->data->pin != pin) {
+            addLogCapped(n->data, timestamp("Deposit failed: bad PIN"));
+            return -2;
+        }
+        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) {
+            addLogCapped(n->data, timestamp("Deposit failed: invalid amount"));
+            return -1;
+        }
         long long before = n->data->balance;
         n->data->balance += amount;
-        n->data->addLog(timestamp("Deposit +RM " + to_string(amount) +
+        addLogCapped(n->data, timestamp("Deposit +RM " + to_string(amount) +
             ", before=RM " + to_string(before) +
             ", after=RM " + to_string(n->data->balance)));
-        saveToFile(DATA_FILE);
+        if (!saveToFile(DATA_FILE)) {
+            n->data->balance = before;
+            addLogCapped(n->data, timestamp("Deposit failed: storage error"));
+            return -4;
+        }
         return 1;
     }
 
     // 5) Withdraw
-    // returns: 1 ok, 0 not found, -1 insufficient, -2 bad pin, -3 bad amount
+    // returns: 1 ok, 0 not found, -1 insufficient, -2 bad pin, -3 bad amount, -4 storage error
     int withdraw(int accNo, int pin, long long amount) {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != pin) return -2;
-        if (amount <= 0) return -3;
-        if (n->data->balance < amount) return -1;
+        if (n->data->pin != pin) {
+            addLogCapped(n->data, timestamp("Withdraw failed: bad PIN"));
+            return -2;
+        }
+        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) {
+            addLogCapped(n->data, timestamp("Withdraw failed: invalid amount"));
+            return -3;
+        }
+        if (n->data->balance - amount < MIN_BAL) {
+            addLogCapped(n->data, timestamp("Withdraw failed: insufficient funds"));
+            return -1;
+        }
         long long before = n->data->balance;
         n->data->balance -= amount;
-        n->data->addLog(timestamp("Withdraw -RM " + to_string(amount) +
+        addLogCapped(n->data, timestamp("Withdraw -RM " + to_string(amount) +
             ", before=RM " + to_string(before) +
             ", after=RM " + to_string(n->data->balance)));
-        saveToFile(DATA_FILE);
+        if (!saveToFile(DATA_FILE)) {
+            n->data->balance = before;
+            addLogCapped(n->data, timestamp("Withdraw failed: storage error"));
+            return -4;
+        }
         return 1;
     }
 
     // 5b) Transfer between accounts
-    // returns: 1 ok, 0 src not found, -4 dest not found, -1 insufficient, -2 bad pin, -3 bad amount
+    // returns: 1 ok, 0 src not found, -4 dest not found, -1 insufficient, -2 bad pin, -3 bad amount, -5 self-transfer, -6 storage error
     int transfer(int srcAcc, int pin, int dstAcc, long long amount) {
         Node* src = findNode(srcAcc);
         if (!src) return 0;
+        if (srcAcc == dstAcc) {
+            addLogCapped(src->data, timestamp("Transfer failed: self-transfer"));
+            return -5;
+        }
         Node* dst = findNode(dstAcc);
-        if (!dst) return -4;
-        if (src->data->pin != pin) return -2;
-        if (amount <= 0) return -3;
-        if (src->data->balance < amount) return -1;
+        if (!dst) {
+            addLogCapped(src->data, timestamp("Transfer failed: destination not found"));
+            return -4;
+        }
+        if (src->data->pin != pin) {
+            addLogCapped(src->data, timestamp("Transfer failed: bad PIN"));
+            return -2;
+        }
+        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) {
+            addLogCapped(src->data, timestamp("Transfer failed: invalid amount"));
+            return -3;
+        }
+        if (src->data->balance - amount < MIN_BAL) {
+            addLogCapped(src->data, timestamp("Transfer failed: insufficient funds"));
+            return -1;
+        }
         long long beforeSrc = src->data->balance;
         long long beforeDst = dst->data->balance;
         src->data->balance -= amount;
         dst->data->balance += amount;
-        src->data->addLog(timestamp("Transfer -RM " + to_string(amount) + " to account " + formatAccNo(dstAcc) +
+        addLogCapped(src->data, timestamp("Transfer -RM " + to_string(amount) + " to account " + formatAccNo(dstAcc) +
             ", before=RM " + to_string(beforeSrc) + ", after=RM " + to_string(src->data->balance)));
-        dst->data->addLog(timestamp("Transfer +RM " + to_string(amount) + " from account " + formatAccNo(srcAcc) +
+        addLogCapped(dst->data, timestamp("Transfer +RM " + to_string(amount) + " from account " + formatAccNo(srcAcc) +
             ", before=RM " + to_string(beforeDst) + ", after=RM " + to_string(dst->data->balance)));
-        saveToFile(DATA_FILE);
+        if (!saveToFile(DATA_FILE)) {
+            src->data->balance = beforeSrc;
+            dst->data->balance = beforeDst;
+            addLogCapped(src->data, timestamp("Transfer failed: storage error"));
+            addLogCapped(dst->data, timestamp("Transfer failed: storage error"));
+            return -6;
+        }
         return 1;
     }
 
     // 5c) Change PIN
-    // returns: 1 ok, 0 not found, -1 old pin wrong
+    // returns: 1 ok, 0 not found, -1 old pin wrong, -3 storage error
     int changePin(int accNo, int oldPin, int newPin) {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != oldPin) return -1;
+        if (n->data->pin != oldPin) {
+            addLogCapped(n->data, timestamp("PIN change failed: bad PIN"));
+            return -1;
+        }
+        int before = n->data->pin;
         n->data->pin = newPin;
-        n->data->addLog(timestamp("PIN changed"));
-        saveToFile(DATA_FILE);
+        addLogCapped(n->data, timestamp("PIN changed"));
+        if (!saveToFile(DATA_FILE)) {
+            n->data->pin = before;
+            addLogCapped(n->data, timestamp("PIN change failed: storage error"));
+            return -3;
+        }
         return 1;
     }
 
@@ -606,25 +722,22 @@ public:
         if (!head) return false;
         if (head->data->accNo == accNo) {
             Node* t = head; head = head->next;
-            // record deletion before removing
-            t->data->addLog(timestamp("Account deleted"));
+            addLogCapped(t->data, timestamp("Account deleted"));
             moveLogsToDeleted(t->data);
             delete t->data;
             delete t;
-            saveToFile(DATA_FILE);
-            return true;
+            return saveToFile(DATA_FILE);
         }
         Node* prev = head;
         Node* cur = head->next;
         while (cur) {
             if (cur->data->accNo == accNo) {
                 prev->next = cur->next;
-                cur->data->addLog(timestamp("Account deleted"));
+                addLogCapped(cur->data, timestamp("Account deleted"));
                 moveLogsToDeleted(cur->data);
                 delete cur->data;
                 delete cur;
-                saveToFile(DATA_FILE);
-                return true;
+                return saveToFile(DATA_FILE);
             }
             prev = cur; cur = cur->next;
         }
@@ -632,18 +745,29 @@ public:
     }
 
     // Edit user info
-    // returns: 1 ok, 0 not found
+    // returns: 1 ok, 0 not found, -2 duplicate passport, -3 storage error
     int changeInfo(int accNo, const string& newName, const string& newic,
         char newGender, const string& newTypeCS, int newPIN) {
         Node* n = findNode(accNo);
         if (!n) return 0;
-         n->data->name = newName;
+        for (Node* c = head; c; c = c->next) {
+            if (c != n && c->data->ic == newic) {
+                printCentered("Passport already in use.");
+                addLogCapped(n->data, timestamp("Info change failed: duplicate passport"));
+                return -2;
+            }
+        }
+        n->data->name = newName;
         n->data->ic = newic;
         n->data->gender = newGender;
-       n->data->typeCS = newTypeCS;
+        n->data->typeCS = newTypeCS;
         n->data->pin = newPIN;
-        n->data->addLog(timestamp("Info changed"));
-        saveToFile(DATA_FILE);
+        addLogCapped(n->data, timestamp("Info changed"));
+        if (!saveToFile(DATA_FILE)) {
+            printCentered("Storage error.");
+            addLogCapped(n->data, timestamp("Info change failed: storage error"));
+            return -3;
+        }
         return 1;
     }
 
@@ -692,17 +816,16 @@ public:
             // convert values to strings so we can center everything
             string sAcc = formatAccNo(a->accNo);
             string sGen = (a->gender == 'M') ? "Male" : "Female";
-            string sPin = formatPin(a->pin);
             string sBal = string("RM ") + to_string(a->balance);
 
             // build ONE line, then center the whole line
             string row =
                 "| " + centerFit(sAcc, W_ACC) + " | "
                 + centerFit(a->name, W_NAME) + " | "
-                + centerFit(a->ic, W_ic) + " | "
+                + centerFit(maskMid(a->ic), W_ic) + " | "
                 + centerFit(sGen, W_GEN) + " | "
                 + centerFit(a->typeCS, W_TYPE) + " | "
-                + centerFit(sPin, W_PIN) + " | "
+                + centerFit(maskPin(a->pin), W_PIN) + " | "
                 + centerFit(sBal, W_BAL) + " |";
 
             printCentered(row);  // <<-- centered print for the entire row
@@ -719,7 +842,7 @@ public:
     void insert_log(int accNo, const string& msg) {
         Node* n = findNode(accNo);
         if (!n) return;
-        n->data->addLog(timestamp(msg));
+        addLogCapped(n->data, timestamp(msg));
         // persist logs if used independently of other operations
         saveLogsToFile(LOG_FILE);
     }
@@ -745,32 +868,34 @@ public:
         printCentered("Logs Not Found....!!!");
     }
 
-    void saveLogsToFile(const string& filename) const {
+    bool saveLogsToFile(const string& filename) const {
         ofstream out(filename, ios::binary | ios::trunc);
-        if (!out) return;
-        auto writeList = [&out](int accNo, LogNode* logs) {
-            out.write(reinterpret_cast<const char*>(&accNo), sizeof(accNo));
+        if (!out) { printCentered("Storage error (logs)."); return false; }
+        auto writeList = [&out](int accNo, LogNode* logs)->bool {
+            if (!out.write(reinterpret_cast<const char*>(&accNo), sizeof(accNo))) return false;
             int count = 0;
             for (LogNode* c = logs; c; c = c->next) ++count;
-            out.write(reinterpret_cast<const char*>(&count), sizeof(count));
+            if (!out.write(reinterpret_cast<const char*>(&count), sizeof(count))) return false;
             LogNode* c = logs;
             while (c) {
                 int len = static_cast<int>(c->text.size());
-                out.write(reinterpret_cast<const char*>(&len), sizeof(len));
-                out.write(c->text.c_str(), len);
+                if (!out.write(reinterpret_cast<const char*>(&len), sizeof(len))) return false;
+                if (!out.write(c->text.c_str(), len)) return false;
                 c = c->next;
             }
+            return true;
         };
         Node* cur = head;
         while (cur) {
-            writeList(cur->data->accNo, cur->data->logHead);
+            if (!writeList(cur->data->accNo, cur->data->logHead)) return false;
             cur = cur->next;
         }
         DeletedLogEntry* d = delHead;
         while (d) {
-            writeList(d->accNo, d->logs);
+            if (!writeList(d->accNo, d->logs)) return false;
             d = d->next;
         }
+        return true;
     }
 
     void loadLogsFromFile(const string& filename) {
@@ -852,15 +977,23 @@ private:
 };
 
 // Function to load accounts from the binary file into the linked list
-void loadAccountsFromFile(Bank& bank) {
+bool loadAccountsFromFile(Bank& bank) {
     ifstream in(DATA_FILE, ios::binary);
-    if (in) {
-        AccountRecord rec;
-        while (in.read(reinterpret_cast<char*>(&rec), sizeof(rec))) {
+    if (!in) { bank.loadLogsFromFile(LOG_FILE); return true; }
+    FileHeader h{};
+    if (!in.read(reinterpret_cast<char*>(&h), sizeof(h)) ||
+        h.magic != 0x42414E4B || h.ver != 1) {
+        printCentered("Data file is corrupted or incompatible. Starting empty.");
+        return false;
+    }
+    AccountRecord rec;
+    while (in.read(reinterpret_cast<char*>(&rec), sizeof(rec))) {
+        if (!bank.accountExists(rec.accNo) && !bank.passportExists(rec.ic)) {
             bank.addAccountFromFile(rec.accNo, rec.name, rec.ic, rec.gender, rec.typeCS, rec.pin, rec.balance);
         }
     }
     bank.loadLogsFromFile(LOG_FILE);
+    return true;
 }
 
 
@@ -941,8 +1074,8 @@ void admin_panel(Bank& bank) {
         printCentered("6. Show Logs of Deleted Account");
         printCentered("7. Back to Main Menu");
         printCenteredInline("Enter an Option: ");
-        if (!(cin >> b)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
-        cin.ignore(10000, '\n'); // for getline after numbers
+        if (!(cin >> b)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n'); // for getline after numbers
 
         if (b == 1) {
             string full_name = readName("Enter Customer's Full Name: ", 4);
@@ -952,16 +1085,16 @@ void admin_panel(Bank& bank) {
             int pin;
             long long bal;
             ic = readPassport("Enter Passport No: ");
-            printCenteredInline("Enter Gender “Male/Female” (M/F): "); cin >> g; cin.ignore(10000, '\n');
+            printCenteredInline("Enter Gender “Male/Female” (M/F): "); cin >> g; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             g = toupper(g);
             if (g != 'M' && g != 'F') { printCentered("Invalid gender."); continue; }
-            printCenteredInline("Enter Account Type “Current/Savings” (C/S): "); cin >> t; cin.ignore(10000, '\n');
+            printCenteredInline("Enter Account Type “Current/Savings” (C/S): "); cin >> t; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             t = toupper(t);
             if (t != 'C' && t != 'S') { printCentered("Invalid account type."); continue; }
             acc_type = (t == 'C') ? "Current" : "Savings";
             pin = readPin("Enter PIN: ");
             do {
-                bal = readNumber("Enter Balance (Min:500): RM ");
+                bal = readNumberSafe("Enter Balance (Min:500): RM ");
                 if (bal < 500) printCentered("Minimum Balance is 500.");
             } while (bal < 500);
 
@@ -977,14 +1110,14 @@ void admin_panel(Bank& bank) {
             cin.get();
         }
             else if (b == 2) {
-            int acc = (int)readNumber("Enter Account Number to Delete: ", 4);
+            int acc = (int)readNumberSafe("Enter Account Number to Delete: ", 4, 1, 99'999'999);
             if (bank.deleteAccount(acc)) printCentered("Account deleted.");
             else printCentered("Account not found.");
             printCenteredInline("Press Enter to return to ADMIN PANEL...");
             cin.get();
         }
         else if (b == 3) {
-            int acc = (int)readNumber("Enter Account Number to Search: ", 4);
+            int acc = (int)readNumberSafe("Enter Account Number to Search: ", 4, 1, 99'999'999);
             if (!bank.printAccount(acc)) printCentered("Account not found.");
             printCenteredInline("Press Enter to return to ADMIN PANEL...");
             cin.get();
@@ -994,34 +1127,37 @@ void admin_panel(Bank& bank) {
             bank.printForAdmin();
 
             // (Optional) pause so the table doesn't scroll away
-            cin.ignore(10000, '\n');   // clear leftover newline from previous input
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');   // clear leftover newline from previous input
             printCenteredInline("Press Enter to return to ADMIN PANEL...");
             cin.get();
         }
 
          else if (b == 5) {
-            int acc = (int)readNumber("Enter Account Number: ", 4);
+            int acc = (int)readNumberSafe("Enter Account Number: ", 4, 1, 99'999'999);
             string newName = readName("Enter New Name: ", 4);
             string newic;
             char newGender, newTypeCh;
             string newType;
             newic = readPassport("Enter New Passport No: ");
-            printCenteredInline("Enter Gender (M/F): "); cin >> newGender; cin.ignore(10000, '\n');
+            printCenteredInline("Enter Gender (M/F): "); cin >> newGender; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             newGender = toupper(newGender);
             if (newGender != 'M' && newGender != 'F') { printCentered("Invalid gender."); continue; }
-            printCenteredInline("Enter Account Type (C/S): "); cin >> newTypeCh; cin.ignore(10000, '\n');
+            printCenteredInline("Enter Account Type (C/S): "); cin >> newTypeCh; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             newTypeCh = toupper(newTypeCh);
             if (newTypeCh != 'C' && newTypeCh != 'S') { printCentered("Invalid account type."); continue; }
             newType = (newTypeCh == 'C') ? "Current" : "Savings";
             int newPIN = readPin("Enter New PIN: ");
 
             int r = bank.changeInfo(acc, newName, newic, newGender, newType, newPIN);
-            if (r == 1) printCentered("Information changed."); else printCentered("Account not found.");
+            if (r == 1) printCentered("Information changed.");
+            else if (r == 0) printCentered("Account not found.");
+            else if (r == -2) printCentered("Passport already in use.");
+            else if (r == -3) printCentered("Storage error. Please try again.");
             printCenteredInline("Press Enter to return to ADMIN PANEL...");
             cin.get();
         }
         else if (b == 6) {
-            int acc = (int)readNumber("Enter Account Number: ", 4);
+            int acc = (int)readNumberSafe("Enter Account Number: ", 4, 1, 99'999'999);
             int hasDel = bank.display1(acc);
             bank.display(acc); // will print either active or deleted logs
             printCenteredInline("Press Enter to return to ADMIN PANEL...");
@@ -1048,19 +1184,19 @@ void staff_panel(Bank& bank) {
         printCentered("4. Check Logs of User");
         printCentered("5. Back to Main Menu");
         printCenteredInline("Enter an Option: ");
-        if (!(cin >> c)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
-        cin.ignore(10000, '\n'); // for getline after numbers
+        if (!(cin >> c)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n'); // for getline after numbers
 
          if (c == 1) {
-            int acc = (int)readNumber("Enter Account Number: ", 4);
+            int acc = (int)readNumberSafe("Enter Account Number: ", 4, 1, 99'999'999);
             if (!bank.printAccount(acc)) printCentered("User not found.");
             printCenteredInline("Press Enter to return to STAFF PANEL...");
             cin.get();
         }
         else if (c == 2) {
-            int acc = (int)readNumber("Enter Account: ", 4);
+            int acc = (int)readNumberSafe("Enter Account: ", 4, 1, 99'999'999);
             int pin = readPin("Enter Account PIN: ");
-            long long amt = readNumber("Enter Amount to Deposit: RM ");
+            long long amt = readNumberSafe("Enter Amount to Deposit: RM ", 1, 1, 1'000'000'000'000LL);
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
             // BEFORE
             cout<<endl;
@@ -1075,13 +1211,14 @@ void staff_panel(Bank& bank) {
             else if (res == 0) printCentered("Account not found.");
             else if (res == -1) printCentered("Invalid amount.");
             else if (res == -2) printCentered("PIN incorrect.");
+            else if (res == -4) printCentered("Storage error. Please try again.");
             printCenteredInline("Press Enter to return to STAFF PANEL...");
             cin.get();
         }
         else if (c == 3) {
-            int acc = (int)readNumber("Enter Account: ", 4);
+            int acc = (int)readNumberSafe("Enter Account: ", 4, 1, 99'999'999);
             int pin = readPin("Enter Account PIN: ");
-            long long amt = readNumber("Enter Amount to Withdraw: RM ");
+            long long amt = readNumberSafe("Enter Amount to Withdraw: RM ", 1, 1, 1'000'000'000'000LL);
             if (!bank.hasAccount(acc)) { printCentered("Account not found."); continue; }
             // BEFORE
             printCentered("Status BEFORE Withdraw:");
@@ -1093,14 +1230,15 @@ void staff_panel(Bank& bank) {
                 printCentered("Withdraw successful.");
             }
             else if (res == 0) printCentered("Account not found.");
-            else if (res == -1) printCentered("Insufficient funds.");
+            else if (res == -1) printCentered("Insufficient funds or below minimum balance.");
             else if (res == -2) printCentered("PIN incorrect.");
             else if (res == -3) printCentered("Invalid amount.");
+            else if (res == -4) printCentered("Storage error. Please try again.");
             printCenteredInline("Press Enter to return to STAFF PANEL...");
             cin.get();
         }
         else if (c == 4) {
-            int acc = (int)readNumber("Enter Account Number: ", 4);
+            int acc = (int)readNumberSafe("Enter Account Number: ", 4, 1, 99'999'999);
             int inDeleted = bank.display1(acc);
             bank.display(acc);
             if (!inDeleted) {
@@ -1131,16 +1269,17 @@ void atm_service(Bank& bank, int acc, int& pin) {
         printCentered("********************************");
         cout<<endl;
         printCenteredInline("Enter an option: ");
-        if (!(cin >> op)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
+        if (!(cin >> op)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
 
         if (op == 1) {
-            long long amt = readNumber("Enter Amount to Withdraw: RM ");
+            long long amt = readNumberSafe("Enter Amount to Withdraw: RM ", 1, 1, 1'000'000'000'000LL);
             int res = bank.withdraw(acc, pin, amt);
             if (res == 1) printCentered("Withdraw successful.");
             else if (res == 0) printCentered("Account not found.");
-            else if (res == -1) printCentered("Insufficient funds.");
+            else if (res == -1) printCentered("Insufficient funds or below minimum balance.");
             else if (res == -2) printCentered("PIN incorrect.");
             else if (res == -3) printCentered("Invalid amount.");
+            else if (res == -4) printCentered("Storage error. Please try again.");
         }
         else if (op == 2) {
             long long bal; int r = bank.getBalance(acc, pin, bal);
@@ -1155,15 +1294,17 @@ void atm_service(Bank& bank, int acc, int& pin) {
             else if (r == -2) printCentered("No transactions.");
         }
          else if (op == 4) {
-            int dst = (int)readNumber("Enter Recipient Account Number: ", 4);
+            int dst = (int)readNumberSafe("Enter Recipient Account Number: ", 4, 1, 99'999'999);
             if (!bank.hasAccount(dst)) { printCentered("Recipient account not found."); }
             else {
-                long long amt = readNumber("Enter Amount to Transfer: RM ");
+                long long amt = readNumberSafe("Enter Amount to Transfer: RM ", 1, 1, 1'000'000'000'000LL);
                 int r = bank.transfer(acc, pin, dst, amt);
                 if (r == 1) printCentered("Transfer successful.");
-                else if (r == -1) printCentered("Insufficient funds.");
+                else if (r == -1) printCentered("Insufficient funds or below minimum balance.");
                 else if (r == -2) printCentered("PIN incorrect.");
                 else if (r == -3) printCentered("Invalid amount.");
+                else if (r == -5) printCentered("Cannot transfer to the same account.");
+                else if (r == -6) printCentered("Storage error. Please try again.");
             }
         }
          else if (op == 5) {
@@ -1173,6 +1314,7 @@ void atm_service(Bank& bank, int acc, int& pin) {
             if (r == 1) { printCentered("PIN changed."); pin = newp; }
             else if (r == 0) printCentered("Account not found.");
             else if (r == -1) printCentered("Old PIN incorrect.");
+            else if (r == -3) printCentered("Storage error. Please try again.");
         }
         else if (op == 6) {
             break;
@@ -1180,7 +1322,7 @@ void atm_service(Bank& bank, int acc, int& pin) {
         else {
             printCentered("Invalid option.");
         }
-        cin.ignore(10000, '\n');
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
         printCenteredInline("Press Enter to continue..."); cin.get();
     }
 }
@@ -1198,7 +1340,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
         printCentered("********************************");
         cout<<endl;
         printCenteredInline("Enter an option: ");
-        if (!(cin >> d)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
+        if (!(cin >> d)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
 
         if (d == 1) {
             while (true) {
@@ -1212,26 +1354,29 @@ void cdm_service(Bank& bank, int acc, int pin) {
                 printCentered("********************************");
                 cout<<endl;
                 printCenteredInline("Enter an option: ");
-                if (!(cin >> sub)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
+                if (!(cin >> sub)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
 
                 if (sub == 1) {
-                    long long amt = readNumber("Enter Amount to Deposit: RM ");
+                    long long amt = readNumberSafe("Enter Amount to Deposit: RM ", 1, 1, 1'000'000'000'000LL);
                     int r = bank.deposit(acc, pin, amt);
                     if (r == 1) printCentered("Deposit successful.");
                     else if (r == 0) printCentered("Account not found.");
                     else if (r == -1) printCentered("Invalid amount.");
                     else if (r == -2) printCentered("PIN incorrect.");
+                    else if (r == -4) printCentered("Storage error. Please try again.");
                 }
                 else if (sub == 2) {
-                    int dst = (int)readNumber("Enter Recipient Account Number: ", 4);
+                    int dst = (int)readNumberSafe("Enter Recipient Account Number: ", 4, 1, 99'999'999);
                     if (!bank.hasAccount(dst)) { printCentered("Recipient account not found."); }
                     else {
-                        long long amt = readNumber("Enter Amount to Deposit: RM ");
+                        long long amt = readNumberSafe("Enter Amount to Deposit: RM ", 1, 1, 1'000'000'000'000LL);
                         int r = bank.transfer(acc, pin, dst, amt);
                         if (r == 1) printCentered("Deposit successful.");
-                        else if (r == -1) printCentered("Insufficient funds.");
+                        else if (r == -1) printCentered("Insufficient funds or below minimum balance.");
                         else if (r == -2) printCentered("PIN incorrect.");
                         else if (r == -3) printCentered("Invalid amount.");
+                        else if (r == -5) printCentered("Cannot transfer to the same account.");
+                        else if (r == -6) printCentered("Storage error. Please try again.");
                     }
                 }
                 else if (sub == 3) {
@@ -1240,7 +1385,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
                 else {
                     printCentered("Invalid option.");
                 }
-                cin.ignore(10000, '\n');
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 printCenteredInline("Press Enter to continue..."); cin.get();
             }
         }
@@ -1249,7 +1394,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
             if (r == 1) printCentered("Current Balance: RM " + to_string(bal));
             else if (r == 0) printCentered("Account not found.");
             else if (r == -1) printCentered("PIN incorrect.");
-            cin.ignore(10000, '\n');
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
             printCenteredInline("Press Enter to continue..."); cin.get();
         }
         else if (d == 3) {
@@ -1257,7 +1402,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
             if (r == 0) printCentered("Account not found.");
             else if (r == -1) printCentered("PIN incorrect.");
             else if (r == -2) printCentered("No transactions.");
-            cin.ignore(10000, '\n');
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
             printCenteredInline("Press Enter to continue..."); cin.get();
         }
         else if (d == 4) {
@@ -1265,7 +1410,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
         }
         else {
             printCentered("Invalid option.");
-            cin.ignore(10000, '\n');
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
             printCenteredInline("Press Enter to continue..."); cin.get();
         }
     }
@@ -1282,14 +1427,14 @@ void atm_panel(Bank& bank) {
         printCentered("3. Back to Main Menu");
         cout<<endl;
         printCenteredInline("Enter an Option: ");
-        if (!(cin >> d)) { cin.clear(); cin.ignore(10000, '\n'); continue; }
+        if (!(cin >> d)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
 
         if (d == 1 || d == 2) {
-            int acc = (int)readNumber("Enter Account Number: ", 4);
-            if (!bank.hasAccount(acc)) { printCentered("Account not found."); cin.ignore(10000, '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
+            int acc = (int)readNumberSafe("Enter Account Number: ", 4, 1, 99'999'999);
+            if (!bank.hasAccount(acc)) { printCentered("Account not found."); cin.ignore(numeric_limits<streamsize>::max(), '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
             int pin = readPin("Enter PIN: ");
             int chk = bank.checkAccPin(acc, pin);
-            if (chk != 1) { printCentered("PIN incorrect."); cin.ignore(10000, '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
+            if (chk != 1) { printCentered("PIN incorrect."); cin.ignore(numeric_limits<streamsize>::max(), '\n'); printCenteredInline("Press Enter to continue..."); cin.get(); continue; }
             if (d == 1) atm_service(bank, acc, pin);
             else cdm_service(bank, acc, pin);
         }
@@ -1298,7 +1443,7 @@ void atm_panel(Bank& bank) {
         }
         else {
             printCentered("Invalid option.");
-            cin.ignore(10000, '\n');
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
             printCenteredInline("Press Enter to continue..."); cin.get();
         }
     }
