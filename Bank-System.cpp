@@ -1270,6 +1270,7 @@ void atm_service(Bank& bank, int acc, int& pin) {
         cout<<endl;
         printCenteredInline("Enter an option: ");
         if (!(cin >> op)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
         if (op == 1) {
             long long amt = readNumberSafe("Enter Amount to Withdraw: RM ", 1, 1, 1'000'000'000'000LL);
@@ -1295,7 +1296,12 @@ void atm_service(Bank& bank, int acc, int& pin) {
         }
          else if (op == 4) {
             int dst = (int)readNumberSafe("Enter Recipient Account Number: ", 4, 1, 99'999'999);
-            if (!bank.hasAccount(dst)) { printCentered("Recipient account not found."); }
+            if (dst == acc) {
+                printCentered("Cannot transfer to the same account.");
+            }
+            else if (!bank.hasAccount(dst)) {
+                printCentered("Recipient account not found.");
+            }
             else {
                 long long amt = readNumberSafe("Enter Amount to Transfer: RM ", 1, 1, 1'000'000'000'000LL);
                 int r = bank.transfer(acc, pin, dst, amt);
@@ -1341,6 +1347,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
         cout<<endl;
         printCenteredInline("Enter an option: ");
         if (!(cin >> d)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
         if (d == 1) {
             while (true) {
@@ -1355,6 +1362,7 @@ void cdm_service(Bank& bank, int acc, int pin) {
                 cout<<endl;
                 printCenteredInline("Enter an option: ");
                 if (!(cin >> sub)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
                 if (sub == 1) {
                     long long amt = readNumberSafe("Enter Amount to Deposit: RM ", 1, 1, 1'000'000'000'000LL);
@@ -1428,6 +1436,7 @@ void atm_panel(Bank& bank) {
         cout<<endl;
         printCenteredInline("Enter an Option: ");
         if (!(cin >> d)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
         if (d == 1 || d == 2) {
             int acc = (int)readNumberSafe("Enter Account Number: ", 4, 1, 99'999'999);
