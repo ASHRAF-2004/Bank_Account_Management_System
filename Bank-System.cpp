@@ -165,7 +165,7 @@ int getConsoleWidth() {
     return 120; // fallback
 }
 
-// printCentered function (example)␊
+// printCentered function (example)
 // On non-Windows platforms the previous implementation attempted to call
 // Windows API functions unconditionally, which breaks compilation.  We now
 // use the portable getConsoleWidth() helper instead.
@@ -272,7 +272,6 @@ struct LogNode {
     LogNode(const string& t) : text(t), next(NULL) {}
 };
 
-// Keep logs of deleted accounts
 struct DeletedLogEntry {
     int accNo;
     LogNode* logs;           // head of the logs list
@@ -281,8 +280,10 @@ struct DeletedLogEntry {
 };
 
 // ======================= Account (OOP) =======================
+// Represents a single bank account with encapsulated state and
+// balance operations that enforce denomination and minimum balance rules.
 class Account {
-public:
+private:
     int accNo;
     string name;
     string ic;      // passport or ID number
@@ -292,8 +293,41 @@ public:
     long long balance;
     LogNode* logHead; // singly linked list of logs
 
+public:
     Account(int a, const string& nm, const string& c, char g, const string& t, int p, long long b)
-        : accNo(a), name(nm), ic(c), gender(g), typeCS(t), pin(p), balance(b), logHead(NULL) {
+        : accNo(a), name(nm), ic(c), gender(g), typeCS(t), pin(p), balance(b), logHead(NULL) {}
+
+    // ---- basic accessors ----
+    int getAccNo() const { return accNo; }
+    const string& getName() const { return name; }
+    const string& getIC() const { return ic; }
+    char getGender() const { return gender; }
+    const string& getType() const { return typeCS; }
+    int getPin() const { return pin; }
+    long long getBalance() const { return balance; }
+    LogNode* getLogHead() const { return logHead; }
+
+    void setName(const string& nm) { name = nm; }
+    void setIC(const string& c) { ic = c; }
+    void setGender(char g) { gender = g; }
+    void setType(const string& t) { typeCS = t; }
+    void setPin(int p) { pin = p; }
+    void setLogHead(LogNode* h) { logHead = h; }
+
+    bool verifyPin(int p) const { return pin == p; }
+
+    bool deposit(long long amount) {
+        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) return false;
+        balance += amount;
+        return true;
+    }
+
+    // returns: 1 ok, -1 insufficient, -3 bad amount
+    int withdraw(long long amount) {
+        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) return -3;
+        if (balance - amount < MIN_BAL) return -1;
+        balance -= amount;
+        return 1;
     }
 
     void addLog(const string& msg) {
@@ -331,10 +365,10 @@ public:
 void addLogCapped(Account* a, const string& msg, int maxN = 500) {
     a->addLog(msg);
     int cnt = 0;
-    for (LogNode* p = a->logHead; p; p = p->next) ++cnt;
-    while (cnt > maxN && a->logHead) {
+    for (LogNode* p = a->getLogHead(); p; p = p->next) ++cnt;
+    while (cnt > maxN && a->getLogHead()) {
         LogNode* prev = nullptr;
-        LogNode* cur = a->logHead;
+        LogNode* cur = a->getLogHead();
         while (cur->next) { prev = cur; cur = cur->next; }
         if (prev) {
             prev->next = nullptr;
@@ -371,7 +405,7 @@ public:
         Node* cur = head;
         while (cur) {
             Node* nxt = cur->next;
-            freeLogs(cur->data->logHead);
+            freeLogs(cur->data->getLogHead());
             delete cur->data;
             delete cur;
             cur = nxt;
@@ -398,7 +432,7 @@ public:
         int mx = 0;
         Node* cur = head;
         while (cur) {
-            if (cur->data->accNo > mx) mx = cur->data->accNo;
+            if (cur->data->getAccNo() > mx) mx = cur->data->getAccNo();
             cur = cur->next;
         }
         DeletedLogEntry* d = delHead;
@@ -412,7 +446,7 @@ public:
     Node* findNode(int accNo) const {
         Node* cur = head;
         while (cur) {
-            if (cur->data->accNo == accNo) return cur;
+            if (cur->data->getAccNo() == accNo) return cur;
             cur = cur->next;
         }
         return NULL;
@@ -468,7 +502,7 @@ public:
     bool passportExists(const string& ic, int excludeAcc = -1) const {
         Node* c = head;
         while (c) {
-            if (c->data->ic == ic && c->data->accNo != excludeAcc) return true;
+            if (c->data->getIC() == ic && c->data->getAccNo() != excludeAcc) return true;
             c = c->next;
         }
         return false;
@@ -481,7 +515,7 @@ public:
         // Check if account already exists in memory
         Node* cur = head;
         while (cur) {
-            if (cur->data->ic == passportNo) {
+            if (cur->data->getIC() == passportNo) {
                 cout << "Account with this passport number already exists!" << endl;
                 return false;
             }
@@ -520,16 +554,16 @@ public:
         Node* cur = head;
         while (cur) {
             AccountRecord rec{};
-            rec.accNo = cur->data->accNo;
-            strncpy(rec.name, cur->data->name.c_str(), sizeof(rec.name));
+            rec.accNo = cur->data->getAccNo();
+            strncpy(rec.name, cur->data->getName().c_str(), sizeof(rec.name));
             rec.name[sizeof(rec.name) - 1] = '\0';
-            strncpy(rec.ic, cur->data->ic.c_str(), sizeof(rec.ic));
+            strncpy(rec.ic, cur->data->getIC().c_str(), sizeof(rec.ic));
             rec.ic[sizeof(rec.ic) - 1] = '\0';
-            rec.gender = cur->data->gender;
-            strncpy(rec.typeCS, cur->data->typeCS.c_str(), sizeof(rec.typeCS));
+            rec.gender = cur->data->getGender();
+            strncpy(rec.typeCS, cur->data->getType().c_str(), sizeof(rec.typeCS));
             rec.typeCS[sizeof(rec.typeCS) - 1] = '\0';
-            rec.pin = cur->data->pin;
-            rec.balance = cur->data->balance;
+            rec.pin = cur->data->getPin();
+            rec.balance = cur->data->getBalance();
             if (!out.write(reinterpret_cast<char*>(&rec), sizeof(rec))) {
                 printCentered("Write failed (accounts).");
                 return false;
@@ -567,7 +601,7 @@ public:
     int checkAccPin(int accNo, int pin) const {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != pin) return -1;
+        if (!n->data->verifyPin(pin)) return -1;
         return 1;
     }
 
@@ -576,21 +610,20 @@ public:
     int deposit(int accNo, int pin, long long amount) {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != pin) {
+        if (!n->data->verifyPin(pin)) {
             addLogCapped(n->data, timestamp("Deposit failed: bad PIN"));
             return -2;
         }
-        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) {
+        long long before = n->data->getBalance();
+        if (!n->data->deposit(amount)) {
             addLogCapped(n->data, timestamp("Deposit failed: invalid amount"));
             return -1;
         }
-        long long before = n->data->balance;
-        n->data->balance += amount;
         addLogCapped(n->data, timestamp("Deposit +RM " + to_string(amount) +
             ", before=RM " + to_string(before) +
-            ", after=RM " + to_string(n->data->balance)));
+            ", after=RM " + to_string(n->data->getBalance())));
         if (!saveToFile(DATA_FILE)) {
-            n->data->balance = before;
+            n->data->withdraw(amount);
             addLogCapped(n->data, timestamp("Deposit failed: storage error"));
             return -4;
         }
@@ -602,25 +635,25 @@ public:
     int withdraw(int accNo, int pin, long long amount) {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != pin) {
+        if (!n->data->verifyPin(pin)) {
             addLogCapped(n->data, timestamp("Withdraw failed: bad PIN"));
             return -2;
         }
-        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) {
+        long long before = n->data->getBalance();
+        int w = n->data->withdraw(amount);
+        if (w == -3) {
             addLogCapped(n->data, timestamp("Withdraw failed: invalid amount"));
             return -3;
         }
-        if (n->data->balance - amount < MIN_BAL) {
+        if (w == -1) {
             addLogCapped(n->data, timestamp("Withdraw failed: insufficient funds"));
             return -1;
         }
-        long long before = n->data->balance;
-        n->data->balance -= amount;
         addLogCapped(n->data, timestamp("Withdraw -RM " + to_string(amount) +
             ", before=RM " + to_string(before) +
-            ", after=RM " + to_string(n->data->balance)));
+            ", after=RM " + to_string(n->data->getBalance())));
         if (!saveToFile(DATA_FILE)) {
-            n->data->balance = before;
+            n->data->deposit(amount);
             addLogCapped(n->data, timestamp("Withdraw failed: storage error"));
             return -4;
         }
@@ -641,29 +674,29 @@ public:
             addLogCapped(src->data, timestamp("Transfer failed: destination not found"));
             return -4;
         }
-        if (src->data->pin != pin) {
+        if (!src->data->verifyPin(pin)) {
             addLogCapped(src->data, timestamp("Transfer failed: bad PIN"));
             return -2;
         }
-        if (amount <= 0 || (DENOM > 1 && amount % DENOM != 0)) {
+        long long beforeSrc = src->data->getBalance();
+        int w = src->data->withdraw(amount);
+        if (w == -3) {
             addLogCapped(src->data, timestamp("Transfer failed: invalid amount"));
             return -3;
         }
-        if (src->data->balance - amount < MIN_BAL) {
+        if (w == -1) {
             addLogCapped(src->data, timestamp("Transfer failed: insufficient funds"));
             return -1;
         }
-        long long beforeSrc = src->data->balance;
-        long long beforeDst = dst->data->balance;
-        src->data->balance -= amount;
-        dst->data->balance += amount;
+        long long beforeDst = dst->data->getBalance();
+        dst->data->deposit(amount);
         addLogCapped(src->data, timestamp("Transfer -RM " + to_string(amount) + " to account " + formatAccNo(dstAcc) +
-            ", before=RM " + to_string(beforeSrc) + ", after=RM " + to_string(src->data->balance)));
+            ", before=RM " + to_string(beforeSrc) + ", after=RM " + to_string(src->data->getBalance())));
         addLogCapped(dst->data, timestamp("Transfer +RM " + to_string(amount) + " from account " + formatAccNo(srcAcc) +
-            ", before=RM " + to_string(beforeDst) + ", after=RM " + to_string(dst->data->balance)));
+            ", before=RM " + to_string(beforeDst) + ", after=RM " + to_string(dst->data->getBalance())));
         if (!saveToFile(DATA_FILE)) {
-            src->data->balance = beforeSrc;
-            dst->data->balance = beforeDst;
+            src->data->deposit(amount);
+            dst->data->withdraw(amount);
             addLogCapped(src->data, timestamp("Transfer failed: storage error"));
             addLogCapped(dst->data, timestamp("Transfer failed: storage error"));
             return -6;
@@ -676,15 +709,15 @@ public:
     int changePin(int accNo, int oldPin, int newPin) {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != oldPin) {
+        if (!n->data->verifyPin(oldPin)) {
             addLogCapped(n->data, timestamp("PIN change failed: bad PIN"));
             return -1;
         }
-        int before = n->data->pin;
-        n->data->pin = newPin;
+        int before = n->data->getPin();
+        n->data->setPin(newPin);
         addLogCapped(n->data, timestamp("PIN changed"));
         if (!saveToFile(DATA_FILE)) {
-            n->data->pin = before;
+            n->data->setPin(before);
             addLogCapped(n->data, timestamp("PIN change failed: storage error"));
             return -3;
         }
@@ -696,8 +729,8 @@ public:
     int getBalance(int accNo, int pin, long long& outBal) const {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != pin) return -1;
-        outBal = n->data->balance;
+        if (!n->data->verifyPin(pin)) return -1;
+        outBal = n->data->getBalance();
         return 1;
     }
 
@@ -706,9 +739,9 @@ public:
     int miniStatement(int accNo, int pin, int N) const {
         Node* n = findNode(accNo);
         if (!n) return 0;
-        if (n->data->pin != pin) return -1;
+        if (!n->data->verifyPin(pin)) return -1;
         vector<string> logs;
-        for (LogNode* cur = n->data->logHead; cur; cur = cur->next) logs.push_back(cur->text);
+        for (LogNode* cur = n->data->getLogHead(); cur; cur = cur->next) logs.push_back(cur->text);
         if (logs.empty()) return -2;
         int start = (int)logs.size() > N ? (int)logs.size() - N : 0;
         for (int i = start; i < (int)logs.size(); ++i) {
@@ -720,7 +753,7 @@ public:
     // 6) Delete account (move its logs to deleted list so we can show later)
     bool deleteAccount(int accNo) {
         if (!head) return false;
-        if (head->data->accNo == accNo) {
+        if (head->data->getAccNo() == accNo) {
             Node* t = head; head = head->next;
             addLogCapped(t->data, timestamp("Account deleted"));
             moveLogsToDeleted(t->data);
@@ -731,7 +764,7 @@ public:
         Node* prev = head;
         Node* cur = head->next;
         while (cur) {
-            if (cur->data->accNo == accNo) {
+            if (cur->data->getAccNo() == accNo) {
                 prev->next = cur->next;
                 addLogCapped(cur->data, timestamp("Account deleted"));
                 moveLogsToDeleted(cur->data);
@@ -751,17 +784,17 @@ public:
         Node* n = findNode(accNo);
         if (!n) return 0;
         for (Node* c = head; c; c = c->next) {
-            if (c != n && c->data->ic == newic) {
+            if (c != n && c->data->getIC() == newic) {
                 printCentered("Passport already in use.");
                 addLogCapped(n->data, timestamp("Info change failed: duplicate passport"));
                 return -2;
             }
         }
-        n->data->name = newName;
-        n->data->ic = newic;
-        n->data->gender = newGender;
-        n->data->typeCS = newTypeCS;
-        n->data->pin = newPIN;
+        n->data->setName(newName);
+        n->data->setIC(newic);
+        n->data->setGender(newGender);
+        n->data->setType(newTypeCS);
+        n->data->setPin(newPIN);
         addLogCapped(n->data, timestamp("Info changed"));
         if (!saveToFile(DATA_FILE)) {
             printCentered("Storage error.");
@@ -814,18 +847,18 @@ public:
             Account* a = cur->data;
 
             // convert values to strings so we can center everything
-            string sAcc = formatAccNo(a->accNo);
-            string sGen = (a->gender == 'M') ? "Male" : "Female";
-            string sBal = string("RM ") + to_string(a->balance);
+            string sAcc = formatAccNo(a->getAccNo());
+            string sGen = (a->getGender() == 'M') ? "Male" : "Female";
+            string sBal = string("RM ") + to_string(a->getBalance());
 
             // build ONE line, then center the whole line
             string row =
                 "| " + centerFit(sAcc, W_ACC) + " | "
-                + centerFit(a->name, W_NAME) + " | "
-                + centerFit(maskMid(a->ic), W_ic) + " | "
+                + centerFit(a->getName(), W_NAME) + " | "
+                + centerFit(maskMid(a->getIC()), W_ic) + " | "
                 + centerFit(sGen, W_GEN) + " | "
-                + centerFit(a->typeCS, W_TYPE) + " | "
-                + centerFit(maskPin(a->pin), W_PIN) + " | "
+                + centerFit(a->getType(), W_TYPE) + " | "
+                + centerFit(maskPin(a->getPin()), W_PIN) + " | "
                 + centerFit(sBal, W_BAL) + " |";
 
             printCentered(row);  // <<-- centered print for the entire row
@@ -857,7 +890,7 @@ public:
     void display(int accNo) const {
         Node* n = findNode(accNo);
         if (n) {
-            printLogs(n->data->logHead);
+            printLogs(n->data->getLogHead());
             return;
         }
         const DeletedLogEntry* d = findDeleted(accNo);
@@ -887,7 +920,7 @@ public:
         };
         Node* cur = head;
         while (cur) {
-            if (!writeList(cur->data->accNo, cur->data->logHead)) return false;
+            if (!writeList(cur->data->getAccNo(), cur->data->getLogHead())) return false;
             cur = cur->next;
         }
         DeletedLogEntry* d = delHead;
@@ -924,8 +957,8 @@ public:
                 tail = &node->next;
             }
             Node* n = findNode(accNo);
-            if (n) {
-                n->data->logHead = h;
+             if (n) {
+                n->data->setLogHead(h);
             } else {
                 DeletedLogEntry* e = new DeletedLogEntry(accNo, h);
                 e->next = delHead;
@@ -959,11 +992,11 @@ private:
 
     void moveLogsToDeleted(Account* a) {
         // prepend to deleted list (keep logs)
-        DeletedLogEntry* e = new DeletedLogEntry(a->accNo, a->logHead);
+        DeletedLogEntry* e = new DeletedLogEntry(a->getAccNo(), a->getLogHead());
         e->next = delHead;
         delHead = e;
         // detach logs from account so destructor won't free twice
-        a->logHead = NULL;
+        a->setLogHead(NULL);
     }
 
     const DeletedLogEntry* findDeleted(int accNo) const {
