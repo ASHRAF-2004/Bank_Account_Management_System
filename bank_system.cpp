@@ -98,7 +98,7 @@ string readName(const string& prompt, size_t minLen = 1) {
         string t = trim(input);
         size_t letters = count_if(t.begin(), t.end(), ::isalpha);
         if (letters >= minLen && isAlphaSpace(t) && t.size() <= 99) return t;
-        printCentered("Invalid input.");
+        printCentered("Invalid name. Only letters and spaces allowed.");
     }
 }
 
@@ -132,6 +132,36 @@ string readPassport(const string& prompt) {
         } else {
             return cleaned;
         }
+    }
+}
+
+long long readInitialBalance(const string& prompt) {
+    while (true) {
+        string balStr;
+        printCenteredInline(prompt);
+        getline(cin, balStr);
+        balStr.erase(remove_if(balStr.begin(), balStr.end(), ::isspace), balStr.end());
+        if (balStr.empty() || !all_of(balStr.begin(), balStr.end(), ::isdigit)) {
+            printCentered("Invalid amount.");
+            continue;
+        }
+        if (balStr.size() > 18) {
+            printCentered("Number too large.");
+            continue;
+        }
+        long long bal;
+        try { bal = stoll(balStr); }
+        catch (...) { printCentered("Invalid number."); continue; }
+        if (bal < MIN_BAL) {
+            printCentered("Minimum Balance is 500.");
+            continue;
+        }
+        if (DENOM > 1 && bal % DENOM != 0) {
+            string msg = "Amount must be in multiples of " + to_string(DENOM) + ".";
+            printCentered(msg);
+            continue;
+        }
+        return bal;
     }
 }
 
@@ -1093,6 +1123,53 @@ int main() {
 // ======================= Panel Functions =======================
 
 // ---------------- Admin ----------------
+bool createAccountFlow(Bank& bank) {
+    string name = readName("Enter Customer's Full Name: ", 4);
+
+    string ic;
+    while (true) {
+        ic = readPassport("Enter Passport No: ");
+        if (!bank.passportExists(ic)) break;
+        printCentered("Account with this passport number already exists!");
+    }
+
+    char g;
+    while (true) {
+        printCenteredInline("Enter Gender \"Male/Female\" (M/F): ");
+        string gInput; getline(cin, gInput);
+        if (!gInput.empty()) {
+            g = toupper(gInput[0]);
+            if (g == 'M' || g == 'F') break;
+        }
+        printCentered("Invalid gender. Please enter M or F.");
+    }
+
+    string acc_type;
+    while (true) {
+        printCenteredInline("Enter Account Type \"Current/Savings\" (C/S): ");
+        string tInput; getline(cin, tInput);
+        if (!tInput.empty()) {
+            char t = toupper(tInput[0]);
+            if (t == 'C') { acc_type = "Current"; break; }
+            if (t == 'S') { acc_type = "Savings"; break; }
+        }
+        printCentered("Invalid account type. Please enter C or S.");
+    }
+
+    int pin = readPin("Enter PIN: ");
+
+    long long bal = readInitialBalance("Enter Balance (Min:500): RM ");
+
+    int accNoOut = 0;
+    if (bank.addAccount(name, ic, g, acc_type, pin, bal, accNoOut)) {
+        printCentered("Account created successfully.");
+        printCentered("Generated Account Number: " + formatAccNo(accNoOut));
+        return true;
+    }
+    printCentered("Create failed (duplicate or memory).");
+    return false;
+}
+
 void admin_panel(Bank& bank) {
     while (true) {
         clearScreen();
@@ -1111,52 +1188,29 @@ void admin_panel(Bank& bank) {
         cin.ignore(numeric_limits<streamsize>::max(), '\n'); // for getline after numbers
 
         if (b == 1) {
-            string full_name = readName("Enter Customer's Full Name: ", 4);
-            string ic;
-            char g, t;
-            string acc_type;
-            int pin;
-            long long bal;
-            ic = readPassport("Enter Passport No: ");
-            if (bank.passportExists(ic)) {
-                printCentered("Account with this passport number already exists!");
-                printCenteredInline("Press Enter to return to ADMIN PANEL...");
-                cin.get();
-                continue;
+            bool retry = true;
+            while (retry) {
+                if (createAccountFlow(bank)) {
+                    printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                    cin.get();
+                    break;
+                } else {
+                    printCentered("Account creation failed due to invalid input.");
+                    char choice;
+                    while (true) {
+                        printCenteredInline("Error in account input process. Do you want to retry? (y/n): ");
+                        if (!(cin >> choice)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
+                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                        choice = tolower(choice);
+                        if (choice == 'y') { break; }
+                        if (choice == 'n') { retry = false; break; }
+                    }
+                    if (!retry) {
+                        printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                        cin.get();
+                    }
+                }
             }
-            printCenteredInline("Enter Gender “Male/Female” (M/F): "); cin >> g; cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            g = toupper(g);
-            if (g != 'M' && g != 'F') {
-                printCentered("Invalid gender.");
-                printCenteredInline("Press Enter to return to ADMIN PANEL...");
-                cin.get();
-                continue;
-            }
-            printCenteredInline("Enter Account Type “Current/Savings” (C/S): "); cin >> t; cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            t = toupper(t);
-            if (t != 'C' && t != 'S') {
-                printCentered("Invalid account type.");
-                printCenteredInline("Press Enter to return to ADMIN PANEL...");
-                cin.get();
-                continue;
-            }
-            acc_type = (t == 'C') ? "Current" : "Savings";
-            pin = readPin("Enter PIN: ");
-            do {
-                bal = readNumberSafe("Enter Balance (Min:500): RM ");
-                if (bal < 500) printCentered("Minimum Balance is 500.");
-            } while (bal < 500);
-
-            int accNoOut = 0;
-             if (bank.addAccount(full_name, ic, g, acc_type, pin, bal, accNoOut)) {
-                printCentered("Account created successfully.");
-                printCentered("Generated Account Number: " + formatAccNo(accNoOut));
-            }
-            else {
-                printCentered("Create failed (duplicate or memory).");
-            }
-            printCenteredInline("Press Enter to return to ADMIN PANEL...");
-            cin.get();
         }
             else if (b == 2) {
             int acc = (int)readNumberSafe("Enter Account Number to Delete: ", 4, 1, 99'999'999);
