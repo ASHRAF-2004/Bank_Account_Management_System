@@ -112,7 +112,7 @@ int readPin(const string& prompt) {
     }
 }
 
-string readPassport(const string& prompt) {
+string readPassport(const string& prompt, bool allowCancel = false) {
     static const regex pattern("^[A-Z0-9]{6,9}$");
     string input;
     while (true) {
@@ -129,6 +129,13 @@ string readPassport(const string& prompt) {
             printCentered("Please enter your passport number.");
         } else if (!regex_match(cleaned, pattern)) {
             printCentered("Passport number must be 6-9 letters/digits, no spaces or symbols.");
+            if (allowCancel) {
+                printCenteredInline("Try again? (y/n): ");
+                string choice; getline(cin, choice);
+                if (!choice.empty() && (choice[0] == 'n' || choice[0] == 'N')) {
+                    return ""; // signal cancellation
+                }
+            }
         } else {
             return cleaned;
         }
@@ -1128,7 +1135,11 @@ bool createAccountFlow(Bank& bank) {
 
     string ic;
     while (true) {
-        ic = readPassport("Enter Passport No: ");
+        ic = readPassport("Enter Passport No: ", true);
+        if (ic.empty()) {
+            printCentered("Account creation cancelled.");
+            return false;
+        }
         if (!bank.passportExists(ic)) break;
         printCentered("Account with this passport number already exists!");
     }
@@ -1188,29 +1199,9 @@ void admin_panel(Bank& bank) {
         cin.ignore(numeric_limits<streamsize>::max(), '\n'); // for getline after numbers
 
         if (b == 1) {
-            bool retry = true;
-            while (retry) {
-                if (createAccountFlow(bank)) {
-                    printCenteredInline("Press Enter to return to ADMIN PANEL...");
-                    cin.get();
-                    break;
-                } else {
-                    printCentered("Account creation failed due to invalid input.");
-                    char choice;
-                    while (true) {
-                        printCenteredInline("Error in account input process. Do you want to retry? (y/n): ");
-                        if (!(cin >> choice)) { cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); continue; }
-                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                        choice = tolower(choice);
-                        if (choice == 'y') { break; }
-                        if (choice == 'n') { retry = false; break; }
-                    }
-                    if (!retry) {
-                        printCenteredInline("Press Enter to return to ADMIN PANEL...");
-                        cin.get();
-                    }
-                }
-            }
+            createAccountFlow(bank);
+            printCenteredInline("Press Enter to return to ADMIN PANEL...");
+            cin.get();
         }
             else if (b == 2) {
             int acc = (int)readNumberSafe("Enter Account Number to Delete: ", 4, 1, 99'999'999);
@@ -1241,7 +1232,13 @@ void admin_panel(Bank& bank) {
             string newic;
             char newGender, newTypeCh;
             string newType;
-            newic = readPassport("Enter New Passport No: ");
+            newic = readPassport("Enter New Passport No: ", true);
+            if (newic.empty()) {
+                printCentered("Edit cancelled.");
+                printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                cin.get();
+                continue;
+            }
             printCenteredInline("Enter Gender (M/F): "); cin >> newGender; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             newGender = toupper(newGender);
             if (newGender != 'M' && newGender != 'F') {
