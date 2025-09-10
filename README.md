@@ -1,87 +1,74 @@
-Bank Account Management System (C++ OOP)
-📌 Description
+# 📄 README.md  
 
-A Bank Account Management System implemented in C++ using Object-Oriented Programming (OOP) and singly linked lists.
-The project has two versions:
+## Project: CCP6120 OOPDS Assignment  
+This project contains two C++ programs:  
 
-Basic.cpp → Simple linked list version with add, display, search, deposit, withdraw, and delete operations.
+1. **bank_system.cpp** → Bank Account Management System (Singly Linked List)  
+2. **warehouse_system.cpp** → Warehouse Inventory & Shipping System (Stack + Queue)  
 
-Advanced.cpp → Full-featured system with Admin/Staff/ATM/CDM panels, PIN authentication, account types, transaction logs, file storage (accounts.dat, logs.dat), and error handling.
+---
 
-🚀 Features
+## 🛠 Requirements  
+- A C++ compiler (e.g., **g++**, MinGW, or MSVC).  
+- Works on Windows, Linux, or macOS.  
+- Optional: Any IDE (Code::Blocks, Dev-C++, Visual Studio, CLion, etc.)  
 
-Add, display, search, and delete accounts
+---
 
-Deposit and withdraw with validation
+## ▶️ Compilation & Execution  
 
-Transfer money between accounts
+### 1. Bank Account Management System (`bank_system.cpp`)  
 
-PIN management (set/change PIN)
+**Compile:**  
+```bash
+g++ bank_system.cpp -o bank_system
+```
 
-Mini statement (last N transactions)
+**Run:**  
+```bash
+./bank_system
+```
 
-Admin & Staff login panels
+**Notes:**  
+- This program uses **binary files** for storage:  
+  - `accounts.dat` → stores account details.  
+  - `logs.dat` → stores transaction logs.  
+- Make sure the program has permission to create/read/write these files in the same folder.  
+- **Default passwords:**  
+  - Admin → `1111`  
+  - Staff → `2222`  
+- **Features:**  
+  - Create/Delete account  
+  - Deposit/Withdraw/Transfer  
+  - ATM & CDM panels  
+  - Admin & Staff login  
+  - Logs management  
 
-ATM/CDM simulation (deposit, withdraw, balance inquiry)
+---
 
-Persistent storage in binary files (accounts.dat, logs.dat)
+### 2. Warehouse Inventory & Shipping System (`warehouse_system.cpp`)  
 
-🛠️ Concepts Used
+**Compile:**  
+```bash
+g++ warehouse_system.cpp -o warehouse_system
+```
 
-Object-Oriented Programming (classes, encapsulation, constructors, destructors)
+**Run:**  
+```bash
+./warehouse_system
+```
 
-Data Structures (singly linked list for accounts, linked list for logs)
+**Features:**  
+- **Stack** manages incoming items (LIFO).  
+- **Queue** manages outgoing shipments (FIFO).  
+- Menu options:  
+  1. Add Incoming Item  
+  2. Process Incoming Item (moves from stack → queue)  
+  3. Ship Item  
+  4. View Last Incoming Item  
+  5. View Next Shipment  
+  6. Exit  
 
-Dynamic Memory Management (new/delete, destructor cleanup)
-
-File Handling (binary read/write to save accounts and logs)
-
-Error Handling (invalid inputs, insufficient balance, wrong PIN)
-
-Menu-Driven Interface
-
-📂 Project Files
-BankSystem/
-
-│── Basic.cpp       # Simple linked list implementation
-
-│── Advanced.cpp    # Full-featured bank system with logs & panels
-
-│── accounts.dat    # Binary file storing account details
-
-│── logs.dat        # Binary file storing account logs
-
-│── README.md       # Project documentation
+---
 
 
-▶️ How to Compile & Run
-
-Basic Version
-g++ Basic.cpp -o bank_basic
-
-./bank_basic
-
-Advanced Version
-
-g++ Advanced.cpp -o bank_advanced
-
-./bank_advanced
-
-📷 Sample Menu (Basic.cpp)
-
---- MENU ---
-1. Add Account
-2. Display Accounts
-3. Search Account
-4. Deposit
-5. Withdraw
-6. Delete Account
-7. Exit
-
-📷 Sample Menu (Advanced.cpp)
-
-********** LOGIN || PANEL **********
-1. Admin Login
-2. Staff Login
-3. ATM/CDM Service
-4. Exit
