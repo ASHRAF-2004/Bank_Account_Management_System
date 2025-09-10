@@ -27,6 +27,8 @@ const long long DENOM   = 10;
 
 void printCentered(const std::string& s);
 void printCenteredInline(const string& s);
+bool askYesNo(const string& prompt);
+
 
 string formatAccNo(int acc) {
     stringstream ss;
@@ -102,13 +104,16 @@ string readName(const string& prompt, size_t minLen = 1) {
     }
 }
 
-int readPin(const string& prompt) {
+int readPin(const string& prompt, bool allowCancel = false) {
     string input;
     while (true) {
         printCenteredInline(prompt);
         getline(cin, input);
         if (isDigits(input) && input.size() == 4) return stoi(input);
         printCentered("PIN must be exactly 4 digits.");
+        if (allowCancel) {
+            if (!askYesNo("Try again? (y/n): ")) return -1;
+        }
     }
 }
 
@@ -142,7 +147,7 @@ string readPassport(const string& prompt, bool allowCancel = false) {
     }
 }
 
-long long readInitialBalance(const string& prompt) {
+long long readInitialBalance(const string& prompt, bool allowCancel = false) {
     while (true) {
         string balStr;
         printCenteredInline(prompt);
@@ -150,25 +155,26 @@ long long readInitialBalance(const string& prompt) {
         balStr.erase(remove_if(balStr.begin(), balStr.end(), ::isspace), balStr.end());
         if (balStr.empty() || !all_of(balStr.begin(), balStr.end(), ::isdigit)) {
             printCentered("Invalid amount.");
-            continue;
-        }
-        if (balStr.size() > 18) {
+        } else if (balStr.size() > 18) {
             printCentered("Number too large.");
-            continue;
+        } else {
+            long long bal;
+            try { bal = stoll(balStr); }
+            catch (...) { bal = -1; }
+            if (bal == -1) {
+                printCentered("Invalid number.");
+            } else if (bal < MIN_BAL) {
+                printCentered("Minimum Balance is 500.");
+            } else if (DENOM > 1 && bal % DENOM != 0) {
+                string msg = "Amount must be in multiples of " + to_string(DENOM) + ".";
+                printCentered(msg);
+            } else {
+                return bal;
+            }
         }
-        long long bal;
-        try { bal = stoll(balStr); }
-        catch (...) { printCentered("Invalid number."); continue; }
-        if (bal < MIN_BAL) {
-            printCentered("Minimum Balance is 500.");
-            continue;
+        if (allowCancel) {
+            if (!askYesNo("Try again? (y/n): ")) return -1;
         }
-        if (DENOM > 1 && bal % DENOM != 0) {
-            string msg = "Amount must be in multiples of " + to_string(DENOM) + ".";
-            printCentered(msg);
-            continue;
-        }
-        return bal;
     }
 }
 
@@ -223,6 +229,13 @@ void printCenteredInline(const string& s) {
     int left = (width - n) / 2;
     if (left < 0) left = 0; // safety: don't go negative
     cout << string(left, ' ') << s;          // no '\n'
+}
+
+bool askYesNo(const string& prompt) {
+    printCenteredInline(prompt);
+    string choice;
+    getline(cin, choice);
+    return !choice.empty() && (choice[0] == 'y' || choice[0] == 'Y');
 }
 
 void clearScreen() {
@@ -1130,55 +1143,100 @@ int main() {
 // ======================= Panel Functions =======================
 
 // ---------------- Admin ----------------
-bool createAccountFlow(Bank& bank) {
-    string name = readName("Enter Customer's Full Name: ", 4);
-
-    string ic;
+bool getPassport(Bank& bank, string& ic) {
     while (true) {
         ic = readPassport("Enter Passport No: ", true);
-        if (ic.empty()) {
-            printCentered("Account creation cancelled.");
-            return false;
-        }
-        if (!bank.passportExists(ic)) break;
+        if (ic.empty()) return false;
+        if (!bank.passportExists(ic)) return true;
         printCentered("Account with this passport number already exists!");
+        if (!askYesNo("Try again? (y/n): ")) return false;
     }
+}
 
-    char g;
+bool getGender(char& g) {
     while (true) {
         printCenteredInline("Enter Gender \"Male/Female\" (M/F): ");
         string gInput; getline(cin, gInput);
         if (!gInput.empty()) {
             g = toupper(gInput[0]);
-            if (g == 'M' || g == 'F') break;
+            if (g == 'M' || g == 'F') return true;
         }
         printCentered("Invalid gender. Please enter M or F.");
+        if (!askYesNo("Try again? (y/n): ")) return false;
     }
+}
 
-    string acc_type;
+bool getAccountType(string& acc_type) {
     while (true) {
         printCenteredInline("Enter Account Type \"Current/Savings\" (C/S): ");
         string tInput; getline(cin, tInput);
         if (!tInput.empty()) {
             char t = toupper(tInput[0]);
-            if (t == 'C') { acc_type = "Current"; break; }
-            if (t == 'S') { acc_type = "Savings"; break; }
+            if (t == 'C') { acc_type = "Current"; return true; }
+            if (t == 'S') { acc_type = "Savings"; return true; }
         }
         printCentered("Invalid account type. Please enter C or S.");
+        if (!askYesNo("Try again? (y/n): ")) return false;
     }
+}
 
-    int pin = readPin("Enter PIN: ");
+bool createAccountFlow(Bank& bank) {
+    while (true) {
+        printCenteredInline("Enter Customer's Full Name: ");
+        string nameInput; getline(cin, nameInput);
+        string name = trim(nameInput);
+        size_t letters = count_if(name.begin(), name.end(), ::isalpha);
+        if (!(letters >= 4 && isAlphaSpace(name) && name.size() <= 99)) {
+            printCentered("Invalid name. Only letters and spaces allowed.");
+            printCentered("Account creation failed due to invalid input.");
+            if (askYesNo("Do you want to retry? (y/n): ")) continue;
+            return false;
+        }
 
-    long long bal = readInitialBalance("Enter Balance (Min:500): RM ");
+        string ic;
+        if (!getPassport(bank, ic)) {
+            printCentered("Account creation failed due to invalid input.");
+            if (askYesNo("Do you want to retry? (y/n): ")) continue;
+            return false;
+        }
 
-    int accNoOut = 0;
-    if (bank.addAccount(name, ic, g, acc_type, pin, bal, accNoOut)) {
-        printCentered("Account created successfully.");
-        printCentered("Generated Account Number: " + formatAccNo(accNoOut));
-        return true;
+        char g;
+        if (!getGender(g)) {
+            printCentered("Account creation failed due to invalid input.");
+            if (askYesNo("Do you want to retry? (y/n): ")) continue;
+            return false;
+        }
+
+        string acc_type;
+        if (!getAccountType(acc_type)) {
+            printCentered("Account creation failed due to invalid input.");
+            if (askYesNo("Do you want to retry? (y/n): ")) continue;
+            return false;
+        }
+
+        int pin = readPin("Enter PIN: ", true);
+        if (pin == -1) {
+            printCentered("Account creation failed due to invalid input.");
+            if (askYesNo("Do you want to retry? (y/n): ")) continue;
+            return false;
+        }
+
+        long long bal = readInitialBalance("Enter Balance (Min:500): RM ", true);
+        if (bal == -1) {
+            printCentered("Account creation failed due to invalid input.");
+            if (askYesNo("Do you want to retry? (y/n): ")) continue;
+            return false;
+        }
+
+        int accNoOut = 0;
+        if (bank.addAccount(name, ic, g, acc_type, pin, bal, accNoOut)) {
+            printCentered("Account created successfully.");
+            printCentered("Generated Account Number: " + formatAccNo(accNoOut));
+            return true;
+        }
+        printCentered("Create failed (duplicate or memory).");
+        if (!askYesNo("Do you want to retry? (y/n): ")) return false;
     }
-    printCentered("Create failed (duplicate or memory).");
-    return false;
 }
 
 void admin_panel(Bank& bank) {
