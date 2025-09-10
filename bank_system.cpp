@@ -1118,12 +1118,28 @@ void admin_panel(Bank& bank) {
             int pin;
             long long bal;
             ic = readPassport("Enter Passport No: ");
+            if (bank.passportExists(ic)) {
+                printCentered("Account with this passport number already exists!");
+                printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                cin.get();
+                continue;
+            }
             printCenteredInline("Enter Gender “Male/Female” (M/F): "); cin >> g; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             g = toupper(g);
-            if (g != 'M' && g != 'F') { printCentered("Invalid gender."); continue; }
+            if (g != 'M' && g != 'F') {
+                printCentered("Invalid gender.");
+                printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                cin.get();
+                continue;
+            }
             printCenteredInline("Enter Account Type “Current/Savings” (C/S): "); cin >> t; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             t = toupper(t);
-            if (t != 'C' && t != 'S') { printCentered("Invalid account type."); continue; }
+            if (t != 'C' && t != 'S') {
+                printCentered("Invalid account type.");
+                printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                cin.get();
+                continue;
+            }
             acc_type = (t == 'C') ? "Current" : "Savings";
             pin = readPin("Enter PIN: ");
             do {
@@ -1174,10 +1190,20 @@ void admin_panel(Bank& bank) {
             newic = readPassport("Enter New Passport No: ");
             printCenteredInline("Enter Gender (M/F): "); cin >> newGender; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             newGender = toupper(newGender);
-            if (newGender != 'M' && newGender != 'F') { printCentered("Invalid gender."); continue; }
+            if (newGender != 'M' && newGender != 'F') {
+                printCentered("Invalid gender.");
+                printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                cin.get();
+                continue;
+            }
             printCenteredInline("Enter Account Type (C/S): "); cin >> newTypeCh; cin.ignore(numeric_limits<streamsize>::max(), '\n');
             newTypeCh = toupper(newTypeCh);
-            if (newTypeCh != 'C' && newTypeCh != 'S') { printCentered("Invalid account type."); continue; }
+            if (newTypeCh != 'C' && newTypeCh != 'S') {
+                printCentered("Invalid account type.");
+                printCenteredInline("Press Enter to return to ADMIN PANEL...");
+                cin.get();
+                continue;
+            }
             newType = (newTypeCh == 'C') ? "Current" : "Savings";
             int newPIN = readPin("Enter New PIN: ");
 
