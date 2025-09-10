@@ -70,9 +70,43 @@ int withdraw(long long amount) {
 The code rejects non‑positive amounts and any value that is not a multiple of the configured `DENOM`. Withdrawals also ensure the balance never drops below `MIN_BAL`.
 
 ## Core Operations with Code
-Below are the main public functions provided by the `Bank` class. Each one returns an integer status code and writes a descriptive log entry.
+Below are the main public functions provided by the `Bank` class. Each one is shown with its implementation followed by a detailed explanation of how it works and what error conditions it reports.
 
-### 1. `deposit`
+### 1. `addAccount`
+```cpp
+bool addAccount(const string& name, const string& passportNo,
+                char gender, const string& accountType,
+                int pin, long long balance, int& outAccNo) {
+    Node* cur = head;
+    while (cur) {
+        if (cur->data->getIC() == passportNo) {
+            cout << "Account with this passport number already exists!" << endl;
+            return false;
+        }
+        cur = cur->next;
+    }
+    int accNo = generateAccNo();
+    if (accNo == -1) return false;
+    Account* acc = new Account(accNo, name, passportNo, gender, accountType, pin, balance);
+    addToList(acc);
+    addLogCapped(acc, timestamp("Account created"));
+    outAccNo = accNo;
+    printCentered("Account added successfully!");
+    if (!saveToFile(DATA_FILE)) return false;
+    return true;
+}
+```
+
+What it does:
+
+- Rejects duplicates by checking passport numbers through the linked list.
+- Generates a new account number sequentially.
+- Allocates an `Account` object and pushes it to the head of the singly linked list.
+- Logs “Account created” and persists the data to `accounts.dat` and the log file.
+
+*Returns `true` on success.* The function first checks for duplicate passport numbers and aborts if a matching account already exists. A new sequential account number is generated, the account is linked into the list, and a creation log entry is added. If writing to disk fails, the function returns `false` and the in‑memory account remains for the current session only.
+
+### 2. `deposit`
 ```cpp
 int deposit(int accNo, int pin, long long amount) {
     Node* n = findNode(accNo);
@@ -97,12 +131,22 @@ int deposit(int accNo, int pin, long long amount) {
     return 1;
 }
 ```
-- **0**: account not found
-- **-2**: PIN mismatch
-- **-1**: invalid amount
-- **-4**: saving to disk failed (deposit is rolled back)
+What it does:
+- Looks up the account by number and aborts if missing.
+- Verifies the provided PIN before modifying funds.
+- Calls the account's `deposit` helper to validate the amount and update the balance.
+- Adds a detailed log entry noting the old and new balance.
+- Persists the change to disk; if saving fails the deposit is rolled back and a storage error is logged.
 
-### 2. `withdraw`
+Return codes:
+
+- **1** – deposit completed and transaction saved.
+- **0** – the supplied account number does not exist.
+- **-2** – the PIN did not match; a "bad PIN" entry is logged.
+- **-1** – amount was non‑positive or not a multiple of `DENOM`; the attempt is logged and ignored.
+- **-4** – writing to the binary file failed; the code rolls back the in‑memory deposit using `withdraw(amount)` and logs the storage error.
+
+### 3. `withdraw`
 ```cpp
 int withdraw(int accNo, int pin, long long amount) {
     Node* n = findNode(accNo);
@@ -132,13 +176,22 @@ int withdraw(int accNo, int pin, long long amount) {
     return 1;
 }
 ```
-- **0**: account not found
-- **-2**: PIN mismatch
-- **-3**: invalid amount
-- **-1**: insufficient funds
-- **-4**: storage error (withdrawal is reversed)
+What it does:
+- Searches for the account and rejects the request if it doesn't exist.
+- Confirms the PIN then invokes the account's `withdraw` helper to enforce denomination and minimum balance rules.
+- On success it logs the withdrawal with before/after balances.
+- Saves the new state to disk, rolling back and logging an error if persistence fails.
 
-### 3. `transfer`
+Return codes:
+
+- **1** – withdrawal completed and saved.
+- **0** – account number does not exist.
+- **-2** – PIN mismatch; failure logged.
+- **-3** – invalid amount (non‑positive or wrong denomination).
+- **-1** – insufficient funds after enforcing `MIN_BAL`.
+- **-4** – disk write failed; the withdrawn amount is re‑deposited and an error log recorded.
+
+### 4. `transfer`
 ```cpp
 int transfer(int srcAcc, int pin, int dstAcc, long long amount) {
     Node* src = findNode(srcAcc);
@@ -182,15 +235,24 @@ int transfer(int srcAcc, int pin, int dstAcc, long long amount) {
     return 1;
 }
 ```
-- **0**: source account not found
-- **-5**: attempted self-transfer
-- **-4**: destination account missing
-- **-2**: PIN mismatch
-- **-3**: invalid amount
-- **-1**: insufficient funds
-- **-6**: storage error (both accounts rolled back)
+What it does:
+- Finds both source and destination accounts, refusing self-transfers or missing accounts.
+- Validates the source PIN and ensures sufficient funds and a valid amount.
+- Withdraws from the source and deposits into the destination, logging both sides.
+- Attempts to save; if writing fails both balances are restored and an error is logged.
 
-### 4. `changePin`
+Return codes:
+
+- **1** – transfer completed and recorded for both accounts.
+- **0** – source account not found.
+- **-5** – attempt to transfer to the same account; ignored and logged.
+- **-4** – destination account does not exist.
+- **-2** – source PIN incorrect.
+- **-3** – invalid amount.
+- **-1** – insufficient funds in the source account.
+- **-6** – saving to disk failed; both accounts are rolled back to their previous balances and an error is logged.
+
+### 5. `changePin`
 ```cpp
 int changePin(int accNo, int oldPin, int newPin) {
     Node* n = findNode(accNo);
@@ -210,11 +272,19 @@ int changePin(int accNo, int oldPin, int newPin) {
     return 1;
 }
 ```
-- **0**: account not found
-- **-1**: old PIN incorrect
-- **-3**: unable to save new PIN
+What it does:
+- Locates the account and confirms the old PIN.
+- Updates the PIN and records the change in the log.
+- Persists to disk, reverting to the previous PIN and logging a storage error if saving fails.
 
-### 5. `getBalance`
+Return codes:
+
+- **1** – PIN updated and written to disk.
+- **0** – account number not found.
+- **-1** – provided old PIN was incorrect.
+- **-3** – disk write failed; the original PIN is restored and a log entry notes the storage error.
+
+### 6. `getBalance`
 ```cpp
 int getBalance(int accNo, int pin, long long& outBal) const {
     Node* n = findNode(accNo);
@@ -224,10 +294,17 @@ int getBalance(int accNo, int pin, long long& outBal) const {
     return 1;
 }
 ```
-- **0**: account not found
-- **-1**: PIN mismatch
+What it does:
+- Retrieves the account node by number.
+- Checks the PIN and outputs the current balance into `outBal`.
 
-### 6. `miniStatement`
+Return codes:
+
+- **1** – balance retrieved and stored in `outBal`.
+- **0** – account not found.
+- **-1** – PIN mismatch.
+
+### 7. `miniStatement`
 ```cpp
 int miniStatement(int accNo, int pin, int N) const {
     Node* n = findNode(accNo);
@@ -243,11 +320,18 @@ int miniStatement(int accNo, int pin, int N) const {
     return 1;
 }
 ```
-- **0**: account not found
-- **-1**: PIN mismatch
-- **-2**: no transactions recorded
+What it does:
+- Finds the account and verifies the PIN.
+- Gathers up to `N` recent log entries and prints them centered on the console.
 
-### 7. `deleteAccount`
+Return codes:
+
+- **1** – the last `N` log entries were printed.
+- **0** – account number not found.
+- **-1** – PIN mismatch.
+- **-2** – the account has no transaction logs.
+
+### 8. `deleteAccount`
 ```cpp
 bool deleteAccount(int accNo) {
     if (!head) return false;
@@ -275,7 +359,54 @@ bool deleteAccount(int accNo) {
     return false;
 }
 ```
-  - Returns `true` if the account is removed and data saved. `false` means the account was missing or saving failed.
+What it does:
+- Removes the matching node from the list, archiving its log history.
+- Deletes the account object to free memory.
+- Saves the updated account list to disk and reports success or failure.
+
+Return value:
+
+- **true** – the account was removed, its logs archived, and changes written to disk.
+- **false** – the account number was not found or saving to disk failed.
+
+### 9. `changeInfo`
+```cpp
+int changeInfo(int accNo, const string& newName, const string& newic,
+               char newGender, const string& newTypeCS, int newPIN) {
+    Node* n = findNode(accNo);
+    if (!n) return 0;
+    for (Node* c = head; c; c = c->next) {
+        if (c != n && c->data->getIC() == newic) {
+            printCentered("Passport already in use.");
+            addLogCapped(n->data, timestamp("Info change failed: duplicate passport"));
+            return -2;
+        }
+    }
+    n->data->setName(newName);
+    n->data->setIC(newic);
+    n->data->setGender(newGender);
+    n->data->setType(newTypeCS);
+    n->data->setPin(newPIN);
+    addLogCapped(n->data, timestamp("Info changed"));
+    if (!saveToFile(DATA_FILE)) {
+        printCentered("Storage error.");
+        addLogCapped(n->data, timestamp("Info change failed: storage error"));
+        return -3;
+    }
+    return 1;
+}
+```
+What it does:
+- Looks up the account and ensures no other account uses the new passport/ID number.
+- Updates all mutable fields (name, passport, gender, account type, PIN) and logs the modification.
+- Saves the record, logging and returning an error if persistence fails.
+
+Return codes:
+
+- **1** – information updated and persisted.
+- **0** – account number not found.
+- **-2** – another account already uses the provided passport/ID number.
+- **-3** – saving to disk failed after changes; a log entry describes the storage error.
 
 ## Program Flow and Menus
 The `main` function seeds the random generator, loads data from disk, and shows a top‑level menu with three service panels:
